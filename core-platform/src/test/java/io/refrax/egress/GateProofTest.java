@@ -61,12 +61,11 @@ class GateProofTest {
                 .then()
                 .statusCode(202);
 
-        // Only the exposable part out. The identity field name (sensorId) is read from the
-        // schema by the handler, not hardcoded.
+        // Only the exposable part out, queried through a view by its declared sensor axis.
         given()
-                .queryParam("sensorId", sensorId)
+                .queryParam("sensor", sensorId)
                 .when()
-                .get("/v1/views/AirQualityReading/latest")
+                .get("/v1/views/air-quality-full/latest")
                 .then()
                 .statusCode(200)
                 // Exposable, non-identity fields are present and correct...

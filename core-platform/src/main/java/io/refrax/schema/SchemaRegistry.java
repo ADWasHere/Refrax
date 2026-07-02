@@ -1,6 +1,7 @@
 package io.refrax.schema;
 
 import io.quarkus.runtime.StartupEvent;
+import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -21,7 +22,8 @@ public class SchemaRegistry {
 
     private final Map<String, EventSchema> schemas = new HashMap<>();
 
-    void onStart(@Observes StartupEvent event) {
+    // Schemas load before views (which validate against them) — lower priority runs first.
+    void onStart(@Observes @Priority(100) StartupEvent event) {
         schemas.putAll(loadAll(locations));
     }
 
