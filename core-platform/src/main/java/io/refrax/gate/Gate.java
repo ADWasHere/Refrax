@@ -27,9 +27,7 @@ public class Gate {
 
         String urn = mintUrn(schema, payload);
 
-        // Deny by default: iterate only declared exposable fields, never the payload keys.
-        // Identity is carried by the URN, not repeated as a property, so every projection
-        // (native, NGSI-LD, ...) represents identity the same single way — in the id.
+        // Deny by default: iterate only declared exposable fields, never the payload keys
         Map<String, ExposableProperty> properties = new LinkedHashMap<>();
         for (FieldDeclaration field : schema.exposableFields()) {
             if (field.role() == FieldRole.IDENTITY) {
@@ -38,6 +36,7 @@ public class Gate {
             if (payload.containsKey(field.name())) {
                 properties.put(field.name(), new ExposableProperty(
                         payload.getValue(field.name()),
+                        field.role(),
                         field.vocabularyUri(),
                         field.personalData()));
             }
