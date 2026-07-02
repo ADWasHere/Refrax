@@ -3,11 +3,13 @@ package io.refrax.gate;
 import io.refrax.schema.EventSchema;
 import io.refrax.schema.FieldDeclaration;
 import io.refrax.schema.FieldRole;
+import io.refrax.view.View;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.function.Predicate;
 
 /**
  * The capability gate: the one place where exposability is decided. It constructs
@@ -15,22 +17,40 @@ import java.util.*;
  * declared exposable fields. Everything else — every undeclared field — is denied by
  * default simply by never being read.
  *
- * <p>The entity URN is built solely from declared identity components.
+ * <p>A view narrows further: when one is given, only the fields it exposes are copied. The
+ * view is applied here, before any projector, so every projector inherits the narrowed set
+ * for free and the leak guarantee holds unchanged. The entity URN is always built solely
+ * from declared identity components.
  */
 @ApplicationScoped
 public class Gate {
 
+    /** Full projection: every exposable (non-identity) field the schema declares. */
     public ExposableEntity project(EventSchema schema, JsonObject payload, OffsetDateTime observedAt) {
         Objects.requireNonNull(schema);
         Objects.requireNonNull(payload);
         Objects.requireNonNull(observedAt);
+        return build(schema, payload, observedAt, field -> true);
+    }
 
+    /** View projection: only the fields the view exposes (a subset of the schema's). */
+    public ExposableEntity project(EventSchema schema, View view, JsonObject payload, OffsetDateTime observedAt) {
+        Objects.requireNonNull(schema);
+        Objects.requireNonNull(view);
+        Objects.requireNonNull(payload);
+        Objects.requireNonNull(observedAt);
+        return build(schema, payload, observedAt, field -> view.exposesField(field.name()));
+    }
+
+    private ExposableEntity build(EventSchema schema, JsonObject payload, OffsetDateTime observedAt,
+                                  Predicate<FieldDeclaration> included) {
         String urn = mintUrn(schema, payload);
 
-        // Deny by default: iterate only declared exposable fields, never the payload keys
+        // Deny by default: iterate only declared exposable fields, never the payload keys.
+        // Identity is carried by the URN, not repeated as a property.
         Map<String, ExposableProperty> properties = new LinkedHashMap<>();
         for (FieldDeclaration field : schema.exposableFields()) {
-            if (field.role() == FieldRole.IDENTITY) {
+            if (field.role() == FieldRole.IDENTITY || !included.test(field)) {
                 continue;
             }
             if (payload.containsKey(field.name())) {

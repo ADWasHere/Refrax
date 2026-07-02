@@ -1,0 +1,9 @@
+{
+  "name": "air-quality-full",
+  "eventType": "AirQualityReading",
+  "exposes": ["metric", "value", "unit"],
+  "queryable": {
+    "sensor": { "field": "sensorId", "match": "exact" },
+    "time":   { "field": "validTime", "match": "range" }
+  }
+}
