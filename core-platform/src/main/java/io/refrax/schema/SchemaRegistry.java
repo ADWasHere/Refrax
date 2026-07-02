@@ -22,11 +22,31 @@ public class SchemaRegistry {
     private final Map<String, EventSchema> schemas = new HashMap<>();
 
     void onStart(@Observes StartupEvent event) {
+        schemas.putAll(loadAll(locations));
+    }
+
+    /**
+     * Loads, validates and indexes every declaration by event type. Two declarations
+     * sharing an event type is a fatal ambiguity — a read would not know which schema to
+     * apply — so it is rejected here rather than silently letting one overwrite the other.
+     */
+    static Map<String, EventSchema> loadAll(List<String> locations) {
+        Map<String, EventSchema> byType = new HashMap<>();
+        Map<String, String> declaredBy = new HashMap<>();
         for (String location : locations) {
-            EventSchema schema = SchemaLoader.load(location.trim());
+            String source = location.trim();
+            EventSchema schema = SchemaLoader.load(source);
             SchemaValidator.validate(schema);
-            schemas.put(schema.eventType(), schema);
+
+            String previous = declaredBy.put(schema.eventType(), source);
+            if (previous != null) {
+                throw new SchemaValidationException(
+                        "Duplicate schema for event type '" + schema.eventType()
+                                + "' declared by both '" + previous + "' and '" + source + "'");
+            }
+            byType.put(schema.eventType(), schema);
         }
+        return byType;
     }
 
     public Optional<EventSchema> find(String eventType) {
