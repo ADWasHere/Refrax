@@ -1,0 +1,43 @@
+@startuml compiler
+' Refrax projection pipeline (capability gate)
+
+top to bottom direction
+skinparam defaultFontName sans-serif
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam ArrowColor #73726C
+skinparam rectangle {
+  BorderColor #5F5E5A
+  FontColor #2C2C2A
+}
+skinparam note {
+  BorderColor #B4B2A9
+  BackgroundColor #FCFBF7
+  FontColor #5F5E5A
+}
+
+rectangle "Domain schema\nroles, vocabulary binding,\npersonal-data flag" as schema #F1EFE8
+rectangle "Domain Model IR\none semantic truth" as ir #E6F1FB
+rectangle "Ingest & storage\ninternals stay here" as storage #F1EFE8
+rectangle "Capability gate\ndeny-by-default, vocab required\nthe only enforcement point" as gate #FAECE7
+rectangle "ExposableEntity\nno internal field is reachable" as exposable #E1F5EE
+
+rectangle "NGSI-LD projector" as ngsi #FAEEDA
+rectangle "OGC SensorThings projector" as sta #FAEEDA
+rectangle "Native projector" as native #E6F1FB
+
+schema --> ir
+ir --> storage : internalView()
+ir --> gate : exposableView()
+gate --> exposable
+exposable --> ngsi
+exposable --> sta
+exposable --> native
+
+note bottom of exposable
+  Projectors decide shape, never eligibility.
+  They receive only the ExposableEntity, so an
+  internal field cannot be emitted by construction.
+end note
+
+@enduml

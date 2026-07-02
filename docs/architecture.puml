@@ -1,0 +1,45 @@
+@startuml architecture
+' Refrax system overview
+
+top to bottom direction
+skinparam defaultFontName sans-serif
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam ArrowColor #73726C
+skinparam rectangle {
+  BorderColor #5F5E5A
+  FontColor #2C2C2A
+}
+skinparam package {
+  BorderColor #B4B2A9
+  BackgroundColor #FCFBF7
+  FontColor #5F5E5A
+}
+
+rectangle "Sensors /\nedge devices" as devices #F1EFE8
+rectangle "Connectors\ndecentralized, low-code" as connectors #E6F1FB
+
+package "Refrax core" {
+  rectangle "Ingest boundary\nauth, tenancy, JIT, schema" as ingest #E6F1FB
+  rectangle "Event log\nSource of Truth\nappend-only, bitemporal" as log #E1F5EE
+  rectangle "Capability gate\ndeny-by-default" as gate #FAECE7
+  rectangle "Views + projectors\nNGSI-LD, SensorThings, native" as proj #FAEEDA
+}
+
+rectangle "Read models\nTimescaleDB, PostGIS" as readmodels #F1EFE8
+rectangle "Standard egress\npull + push" as egress #FAEEDA
+rectangle "Consumers\ndashboards, other cities, analytics" as consumers #F1EFE8
+rectangle "smartcity-cli\nGo, ops / GitOps" as cli #EAF3DE
+
+devices --> connectors
+connectors --> ingest : typed events
+ingest --> log
+log --> gate
+gate --> proj
+proj --> egress
+log --> readmodels : projection
+readmodels --> egress : query / geo axes
+egress --> consumers
+cli --> ingest : provision, declare schemas
+
+@enduml
