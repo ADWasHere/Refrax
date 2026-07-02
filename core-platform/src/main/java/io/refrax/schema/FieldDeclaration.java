@@ -24,7 +24,6 @@ public record FieldDeclaration(
     public FieldDeclaration {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(role, "role");
-
         if (vocabularyUri == null || vocabularyUri.isBlank()) {
             throw new IllegalArgumentException(
                     "Field '" + name + "' with role " + role + " requires a vocabulary binding");

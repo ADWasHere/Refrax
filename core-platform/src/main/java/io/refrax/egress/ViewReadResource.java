@@ -2,6 +2,8 @@ package io.refrax.egress;
 
 import io.refrax.gate.ExposableEntity;
 import io.refrax.gate.Gate;
+import io.refrax.projection.Projector;
+import io.refrax.projection.ProjectorRegistry;
 import io.refrax.schema.EventSchema;
 import io.refrax.schema.FieldDeclaration;
 import io.refrax.schema.SchemaRegistry;
@@ -25,14 +27,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Identity-driven native read endpoint.
- *
- * <p>{@code GET /v1/views/{view}/latest?{identity}=...} returns the latest event of the
- * given type projected through the gate. A {@code {view}} that names no known schema
- * yields 400; a missing identity query parameter yields 400.
+ * Identity-driven read endpoint. {@code GET /v1/views/{view}/latest?{identity}=...} returns
+ * the latest event of the given type projected through the gate, rendered by the projector
+ * named in {@code ?format=} (default {@code native}). Nothing is hardcoded: the event type
+ * comes from the path, the identity field name(s) from the schema, and the shape from the
+ * selected projector. An unknown view or format, or a missing identity parameter, yields
+ * 400.
  */
 @Path("v1/views")
 public class ViewReadResource {
+
+    private static final String DEFAULT_FORMAT = "native";
 
     @Inject
     io.vertx.mutiny.pgclient.PgPool client;
@@ -43,17 +48,29 @@ public class ViewReadResource {
     @Inject
     Gate gate;
 
+    @Inject
+    ProjectorRegistry projectors;
+
     @GET
     @Path("{view}/latest")
     @Produces(MediaType.APPLICATION_JSON)
     public Uni<Response> latest(@PathParam("view") String view, @Context UriInfo uriInfo) {
         EventSchema schema = registry.find(view).orElse(null);
-
         if (schema == null) {
             return Uni.createFrom().item(problem(Response.Status.BAD_REQUEST, "Unknown view: " + view));
         }
 
         MultivaluedMap<String, String> query = uriInfo.getQueryParameters();
+
+        String format = query.getFirst("format");
+        if (format == null || format.isBlank()) {
+            format = DEFAULT_FORMAT;
+        }
+        Projector projector = projectors.byFormat(format).orElse(null);
+        if (projector == null) {
+            return Uni.createFrom().item(problem(Response.Status.BAD_REQUEST, "Unknown format: " + format));
+        }
+
         StringBuilder sql = new StringBuilder(
                 "select payload, valid_time from events where event_type = $1");
         List<Object> params = new ArrayList<>();
@@ -71,6 +88,7 @@ public class ViewReadResource {
         }
         sql.append(" order by seq desc limit 1");
 
+        Projector selected = projector;
         return client.preparedQuery(sql.toString())
                 .execute(Tuple.from(params))
                 .map(rows -> {
@@ -83,20 +101,8 @@ public class ViewReadResource {
 
                     ExposableEntity entity = gate.project(schema, payload, validTime);
 
-                    return Response.ok(renderNative(entity)).build();
+                    return Response.ok(selected.project(entity)).build();
                 });
-    }
-
-    /** Native projection: the {@link ExposableEntity} rendered directly. */
-    private JsonObject renderNative(ExposableEntity entity) {
-        JsonObject out = new JsonObject();
-        out.put("id", entity.id());
-        out.put("type", entity.type());
-        if (entity.observedAt() != null) {
-            out.put("observedAt", entity.observedAt().toString());
-        }
-        entity.properties().forEach((name, prop) -> out.put(name, prop.value()));
-        return out;
     }
 
     private Response problem(Response.Status status, String message) {
