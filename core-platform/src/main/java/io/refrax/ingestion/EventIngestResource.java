@@ -12,6 +12,7 @@ import jakarta.ws.rs.core.Response;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Path("v1/events")
@@ -23,6 +24,8 @@ public class EventIngestResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> append(JsonObject event) {
+        Objects.requireNonNull(event);
+
         String type = event.getString("type");
         JsonObject payload = event.getJsonObject("payload");
 
