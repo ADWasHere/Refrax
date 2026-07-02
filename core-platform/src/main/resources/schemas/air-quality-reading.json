@@ -1,0 +1,32 @@
+{
+  "refraxSchema": "https://github.com/ADWasHere/Refrax/schema/domain/v1",
+  "eventType": "AirQualityReading",
+  "description": "An air-quality measurement reported by a sensor.",
+  "urnNamespace": "urn:refrax",
+  "exposable": {
+    "sensorId": {
+      "role": "identity",
+      "type": "string",
+      "mandatory": true,
+      "vocabularyUri": "https://schema.org/identifier"
+    },
+    "metric": {
+      "role": "property",
+      "type": "string",
+      "mandatory": true,
+      "vocabularyUri": "https://smartdatamodels.org/dataModel.Environment/typeOfMeasurement"
+    },
+    "value": {
+      "role": "property",
+      "type": "number",
+      "mandatory": true,
+      "vocabularyUri": "https://qudt.org/schema/qudt/numericValue"
+    },
+    "unit": {
+      "role": "property",
+      "type": "string",
+      "mandatory": true,
+      "vocabularyUri": "https://qudt.org/schema/qudt/unit"
+    }
+  }
+}

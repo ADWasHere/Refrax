@@ -1,0 +1,13 @@
+{
+  "refraxSchema": "https://github.com/ADWasHere/Refrax/schema/domain/v1",
+  "eventType": "AirQualityReading",
+  "urnNamespace": "urn:refrax",
+  "exposable": {
+    "sensorId": {
+      "role": "identity",
+      "type": "string",
+      "mandatory": true,
+      "vocabularyUri": "https://schema.org/identifier"
+    }
+  }
+}
