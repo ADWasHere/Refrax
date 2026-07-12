@@ -4,6 +4,7 @@
   "exposes": ["metric", "value", "unit"],
   "queryable": {
     "sensor": { "field": "sensorId", "match": "exact" },
-    "time":   { "field": "validTime", "match": "range" }
+    "time":   { "field": "validTime", "match": "range" },
+    "metric": { "field": "metric", "match": "exact" }
   }
 }

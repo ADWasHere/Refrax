@@ -1,0 +1,14 @@
+services:
+  db:
+    image: timescale/timescaledb-ha:pg17
+    environment:
+      POSTGRES_DB: refrax
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - refrax-db:/home/postgres/pgdata
+volumes:
+  refrax-db:

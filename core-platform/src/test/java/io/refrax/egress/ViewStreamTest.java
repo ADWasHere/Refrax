@@ -1,7 +1,9 @@
 package io.refrax.egress;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.refrax.readmodel.ReadModelConsumer;
 import io.restassured.path.json.JsonPath;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -24,6 +26,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @QuarkusTest
 class ViewStreamTest {
 
+    @Inject
+    ReadModelConsumer consumer;
+
     private long ingest(String sensorId, double value) {
         String event = """
                 {
@@ -36,9 +41,11 @@ class ViewStreamTest {
                   }
                 }
                 """.formatted(UUID.randomUUID(), sensorId, value);
-        return given().contentType("application/json").body(event)
+        long seq = given().contentType("application/json").body(event)
                 .when().post("/v1/events").then().statusCode(202)
                 .extract().jsonPath().getLong("seq");
+        consumer.catchUp().await().indefinitely();
+        return seq;
     }
 
     @Test

@@ -33,6 +33,17 @@ public record EventSchema(
         return fields.stream().filter(FieldDeclaration::exposable).toList();
     }
 
+    /**
+     * The entity URN for the given identity component values (in declaration order). The one
+     * place a URN is assembled, so the gate that writes {@code entity_id} and any reader that
+     * filters on it cannot drift apart.
+     */
+    public String urn(List<String> identityValues) {
+        return identityValues.isEmpty()
+                ? urnNamespace + ":" + eventType
+                : urnNamespace + ":" + eventType + ":" + String.join(":", identityValues);
+    }
+
     public Optional<FieldDeclaration> field(String name) {
         Objects.requireNonNull(name);
 

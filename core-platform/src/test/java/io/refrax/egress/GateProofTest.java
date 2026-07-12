@@ -1,6 +1,8 @@
 package io.refrax.egress;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.refrax.readmodel.ReadModelConsumer;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -29,6 +31,9 @@ import static org.hamcrest.Matchers.not;
  */
 @QuarkusTest
 class GateProofTest {
+
+    @Inject
+    ReadModelConsumer consumer;
 
     @Test
     void internalFieldsNeverLeakIntoProjection() {
@@ -60,6 +65,9 @@ class GateProofTest {
                 .post("/v1/events")
                 .then()
                 .statusCode(202);
+
+        // The read side is eventually consistent: let the consumer project the log.
+        consumer.catchUp().await().indefinitely();
 
         // Only the exposable part out, queried through a view by its declared sensor axis.
         given()
