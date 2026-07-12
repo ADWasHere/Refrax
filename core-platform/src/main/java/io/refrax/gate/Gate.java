@@ -66,9 +66,7 @@ public class Gate {
     }
 
     private String mintUrn(EventSchema schema, JsonObject payload) {
-        List<String> parts = new ArrayList<>();
-        parts.add(schema.urnNamespace());
-        parts.add(schema.eventType());
+        List<String> identityValues = new ArrayList<>();
         for (FieldDeclaration id : schema.identityComponents()) {
             Object value = payload.getValue(id.name());
             if (value == null || String.valueOf(value).isBlank()) {
@@ -76,8 +74,8 @@ public class Gate {
                         "Cannot build URN: identity component '" + id.name()
                                 + "' is missing or blank in the payload of event '" + schema.eventType() + "'");
             }
-            parts.add(String.valueOf(value));
+            identityValues.add(String.valueOf(value));
         }
-        return String.join(":", parts);
+        return schema.urn(identityValues);
     }
 }

@@ -1,6 +1,8 @@
 package io.refrax.egress;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.refrax.readmodel.ReadModelConsumer;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -18,6 +20,9 @@ import static org.hamcrest.Matchers.not;
 @QuarkusTest
 class ViewReadResourceTest {
 
+    @Inject
+    ReadModelConsumer consumer;
+
     private String ingestReading(String sensorId, double value) {
         String event = """
                 {
@@ -32,6 +37,7 @@ class ViewReadResourceTest {
                 """.formatted(UUID.randomUUID(), sensorId, value);
         given().contentType("application/json").body(event)
                 .when().post("/v1/events").then().statusCode(202);
+        consumer.catchUp().await().indefinitely();
         return sensorId;
     }
 
