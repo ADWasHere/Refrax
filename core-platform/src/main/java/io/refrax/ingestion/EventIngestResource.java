@@ -26,7 +26,7 @@ public class EventIngestResource {
     public Uni<Response> append(JsonObject event) {
         Objects.requireNonNull(event);
 
-        String type = event.getString("type");
+        String eventType = event.getString("eventType");
         JsonObject payload = event.getJsonObject("payload");
 
         String eventIdStr = event.getString("eventId");
@@ -43,7 +43,7 @@ public class EventIngestResource {
                                 "values ($1, $2, $3, $4, $5, $6) " +
                                 "on conflict (tenant_id, event_id) do nothing " +
                                 "returning seq")
-                .execute(Tuple.of(tenantId, type, payload, validTime, eventId, schemaVersion))
+                .execute(Tuple.of(tenantId, eventType, payload, validTime, eventId, schemaVersion))
                 .map(rows -> {
                     if (rows.rowCount() == 0) {
                         return Response.accepted().entity(Map.of("status", "duplicate")).build();

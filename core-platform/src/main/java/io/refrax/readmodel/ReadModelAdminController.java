@@ -16,7 +16,7 @@ import jakarta.ws.rs.core.Response;
  * (auth is a later concern), so do not expose them publicly in production.
  */
 @Path("v1/admin/readmodel")
-public class ReadModelAdminResource {
+public class ReadModelAdminController {
 
     @Inject
     ReadModelConsumer consumer;
