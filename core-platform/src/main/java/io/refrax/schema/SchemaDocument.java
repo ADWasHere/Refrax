@@ -30,16 +30,18 @@ public record SchemaDocument(
 
     /**
      * One exposable field. Only the attributes the gate/validator act on are modelled;
-     * {@code type}, {@code mandatory}, {@code format}, ... are parsed by the format but
+     * {@code mandatory}, {@code format}, ... are parsed by the format but
      * ignored at runtime for now (design-for, don't-build-yet).
      *
      * @param role          the semantic role (must be exposable)
+     * @param type          the field type (required for searchable fields)
      * @param vocabularyUri the vocabulary binding (required)
      * @param personalData  whether the field is personal data (optional, defaults false)
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record FieldSpec(
             FieldRole role,
+            FieldType type,
             String vocabularyUri,
             boolean personalData) {
     }

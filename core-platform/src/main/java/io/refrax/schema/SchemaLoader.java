@@ -2,7 +2,8 @@ package io.refrax.schema;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.MapperFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import org.jspecify.annotations.NonNull;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,9 +22,10 @@ public final class SchemaLoader {
 
     private static final String DEFAULT_URN_NAMESPACE = "urn:refrax";
 
-    private static final ObjectMapper MAPPER = new ObjectMapper()
+    private static final JsonMapper MAPPER = JsonMapper.builder()
             .enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+            .build();
 
     private SchemaLoader() {
     }
@@ -59,6 +61,11 @@ public final class SchemaLoader {
                 ? DEFAULT_URN_NAMESPACE
                 : doc.urnNamespace();
 
+        List<FieldDeclaration> fields = getFieldDeclarations(doc, location);
+        return new EventSchema(doc.eventType(), namespace, fields);
+    }
+
+    private static @NonNull List<FieldDeclaration> getFieldDeclarations(SchemaDocument doc, String location) {
         List<FieldDeclaration> fields = new ArrayList<>();
         for (Map.Entry<String, SchemaDocument.FieldSpec> entry : doc.exposable().entrySet()) {
             SchemaDocument.FieldSpec spec = entry.getValue();
@@ -67,8 +74,8 @@ public final class SchemaLoader {
                         "Field '" + entry.getKey() + "' in schema '" + location + "' declares no role");
             }
             fields.add(new FieldDeclaration(
-                    entry.getKey(), spec.role(), spec.vocabularyUri(), spec.personalData()));
+                    entry.getKey(), spec.role(), spec.type() == null ? FieldType.STRING : spec.type(), spec.vocabularyUri(), spec.personalData()));
         }
-        return new EventSchema(doc.eventType(), namespace, fields);
+        return fields;
     }
 }

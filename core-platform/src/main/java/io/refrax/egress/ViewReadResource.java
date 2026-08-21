@@ -7,11 +7,7 @@ import io.refrax.projection.ProjectorRegistry;
 import io.refrax.schema.EventSchema;
 import io.refrax.schema.FieldDeclaration;
 import io.refrax.schema.FieldRole;
-import io.refrax.view.MatchType;
-import io.refrax.view.QueryAxis;
-import io.refrax.view.View;
-import io.refrax.view.ViewBinding;
-import io.refrax.view.ViewBindingRegistry;
+import io.refrax.view.*;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -164,24 +160,47 @@ public class ViewReadResource {
                 continue;
             }
 
-            QueryAxis axis = binding.axis(key)
-                    .orElseThrow(() -> new IllegalArgumentException("Undeclared query axis: " + key));
-            if (axis.match() == MatchType.RANGE) {
-                throw new IllegalArgumentException("Range axis '" + key + "' is not queryable directly; use from/to on /series");
+            String baseKey;
+            String op = "eq";
+            if (key.endsWith(".gte")) {
+                baseKey = key.substring(0, key.length() - 4);
+                op = "gte";
+            } else if (key.endsWith(".lte")) {
+                baseKey = key.substring(0, key.length() - 4);
+                op = "lte";
+            } else if (key.endsWith(".gt")) {
+                baseKey = key.substring(0, key.length() - 3);
+                op = "gt";
+            } else if (key.endsWith(".lt")) {
+                baseKey = key.substring(0, key.length() - 3);
+                op = "lt";
+            } else if (key.endsWith(".eq")) {
+                baseKey = key.substring(0, key.length() - 3);
+                op = "eq";
+            } else {
+                baseKey = key;
             }
+
+            QueryAxis axis = binding.axis(baseKey)
+                    .orElseThrow(() -> new IllegalArgumentException("Undeclared query axis: " + baseKey));
 
             String value = entry.getValue().getFirst();
             if (value == null || value.isBlank()) {
-                throw new IllegalArgumentException("Query axis '" + key + "' requires a value");
+                throw new IllegalArgumentException("Query axis '" + baseKey + "' requires a value");
             }
 
             if (binding.isIdentityField(axis.field())) {
                 if (binding.identityFieldNames().size() > 1) {
                     throw new IllegalArgumentException("Cannot filter by a single component of a composite identity");
                 }
+                if (!"eq".equals(op)) {
+                    throw new IllegalArgumentException("Comparison operators are not supported for identity filters");
+                }
                 q.sql(" and entity_id = ").bind(binding.entityUrn(value));
             } else {
-                q.sql(" and exposed_json ->> ").bind(axis.field()).sql(" = ").bind(value);
+                FieldDeclaration fd = binding.schema().field(axis.field()).orElseThrow(
+                        () -> new IllegalArgumentException("Axis '" + baseKey + "' refers to undeclared field: " + axis.field()));
+                JsonbFilter.appendJsonbFilter(q, axis.field(), fd, op, value);
             }
         }
     }
