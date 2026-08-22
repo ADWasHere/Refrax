@@ -29,7 +29,7 @@ class ReadModelConsumerTest {
 
     private long post(String sensorId, double value) {
         String event = """
-                { "type": "AirQualityReading", "eventId": "%s", "observedAt": "2026-07-02T10:05:00Z",
+                { "eventType": "AirQualityReading", "eventId": "%s", "observedAt": "2026-07-02T10:05:00Z",
                   "payload": { "sensorId": "%s", "metric": "PM2.5", "value": %s, "unit": "ug/m3",
                                "deviceDbId": 999999, "userId": "u-1" } }
                 """.formatted(UUID.randomUUID(), sensorId, value);

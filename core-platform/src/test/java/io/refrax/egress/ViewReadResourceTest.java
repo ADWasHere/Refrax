@@ -26,7 +26,7 @@ class ViewReadResourceTest {
     private String ingestReading(String sensorId, double value) {
         String event = """
                 {
-                  "type": "AirQualityReading",
+                  "eventType": "AirQualityReading",
                   "eventId": "%s",
                   "observedAt": "2026-07-02T10:05:00Z",
                   "payload": {

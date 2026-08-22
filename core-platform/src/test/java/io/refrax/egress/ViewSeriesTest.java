@@ -25,7 +25,7 @@ class ViewSeriesTest {
 
     private void ingestAt(String sensorId, String observedAt, double value) {
         String event = """
-                { "type": "AirQualityReading", "eventId": "%s", "observedAt": "%s",
+                { "eventType": "AirQualityReading", "eventId": "%s", "observedAt": "%s",
                   "payload": { "sensorId": "%s", "metric": "PM2.5", "value": %s, "unit": "ug/m3" } }
                 """.formatted(UUID.randomUUID(), observedAt, sensorId, value);
         given().contentType("application/json").body(event)

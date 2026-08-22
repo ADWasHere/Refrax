@@ -42,7 +42,7 @@ class GateProofTest {
         // An event whose payload carries both exposable fields and internal pollution.
         String pollutedEvent = """
                 {
-                  "type": "AirQualityReading",
+                  "eventType": "AirQualityReading",
                   "eventId": "%s",
                   "observedAt": "2026-07-02T10:00:00Z",
                   "payload": {
