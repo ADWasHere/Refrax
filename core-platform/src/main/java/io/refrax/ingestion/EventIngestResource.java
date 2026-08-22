@@ -21,19 +21,22 @@ public class EventIngestResource {
     @Inject
     io.vertx.mutiny.pgclient.PgPool client;
 
+    @Inject
+    IncomingEventValidator incomingEventValidator;
+
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> append(JsonObject event) {
-        Objects.requireNonNull(event);
+        Objects.requireNonNull(event, "event");
 
-        String eventType = event.getString("eventType");
-        JsonObject payload = event.getJsonObject("payload");
+        IncomingEvent incomingEvent = incomingEventValidator.from(event);
+
+        String eventType = incomingEvent.eventType();
+        JsonObject payload = new JsonObject(incomingEvent.fields());
+        OffsetDateTime validTime = OffsetDateTime.ofInstant(incomingEvent.occurredAt(), java.time.ZoneOffset.UTC);
 
         String eventIdStr = event.getString("eventId");
         UUID eventId = (eventIdStr != null) ? UUID.fromString(eventIdStr) : UUID.randomUUID();
-
-        String observedAt = event.getString("observedAt");
-        OffsetDateTime validTime = (observedAt != null) ? OffsetDateTime.parse(observedAt) : null;
 
         String tenantId = "default"; //TODO Enable later tenants with keys for deleting
         String schemaVersion = "v1";

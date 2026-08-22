@@ -73,8 +73,14 @@ public final class SchemaLoader {
                 throw new SchemaValidationException(
                         "Field '" + entry.getKey() + "' in schema '" + location + "' declares no role");
             }
+
+            if (spec.type() == null || spec.type().toString().isBlank()) {
+                throw new SchemaValidationException(
+                        "Field '" + entry.getKey() + "' in schema '" + location + "' declares no type");
+            }
+
             fields.add(new FieldDeclaration(
-                    entry.getKey(), spec.role(), spec.type() == null ? FieldType.STRING : spec.type(), spec.vocabularyUri(), spec.personalData()));
+                    entry.getKey(), spec.role(), spec.type(), spec.vocabularyUri(), spec.personalData()));
         }
         return fields;
     }
