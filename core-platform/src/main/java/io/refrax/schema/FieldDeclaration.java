@@ -18,12 +18,14 @@ import java.util.Objects;
 public record FieldDeclaration(
         String name,
         FieldRole role,
+        FieldType type,
         String vocabularyUri,
         boolean personalData) {
 
     public FieldDeclaration {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(role, "role");
+        Objects.requireNonNull(type, "type");
         if (vocabularyUri == null || vocabularyUri.isBlank()) {
             throw new IllegalArgumentException(
                     "Field '" + name + "' with role " + role + " requires a vocabulary binding");
@@ -37,19 +39,19 @@ public record FieldDeclaration(
     // --- Convenience factories keeping test/call-site declarations readable ----------
 
     public static FieldDeclaration identity(String name, String vocabularyUri) {
-        return new FieldDeclaration(name, FieldRole.IDENTITY, vocabularyUri, false);
+        return new FieldDeclaration(name, FieldRole.IDENTITY, FieldType.STRING, vocabularyUri, false);
     }
 
     public static FieldDeclaration property(String name, String vocabularyUri) {
-        return new FieldDeclaration(name, FieldRole.PROPERTY, vocabularyUri, false);
+        return new FieldDeclaration(name, FieldRole.PROPERTY, FieldType.STRING, vocabularyUri, false);
     }
 
     public static FieldDeclaration relationship(String name, String vocabularyUri) {
-        return new FieldDeclaration(name, FieldRole.RELATIONSHIP, vocabularyUri, false);
+        return new FieldDeclaration(name, FieldRole.RELATIONSHIP, FieldType.STRING, vocabularyUri, false);
     }
 
     /** Returns a copy of this declaration flagged as personal data. */
     public FieldDeclaration asPersonalData() {
-        return new FieldDeclaration(name, role, vocabularyUri, true);
+        return new FieldDeclaration(name, role, type, vocabularyUri, true);
     }
 }

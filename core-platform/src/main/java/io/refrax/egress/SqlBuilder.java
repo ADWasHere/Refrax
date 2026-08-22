@@ -4,9 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A parameterised SQL statement under construction: its text and its bound parameters are one
- * thing, held together and numbered ($1, $2, …) automatically. Callers append fragments and
- * bind values without tracking positions by hand.
+ * A parameterised SQL statement under construction.
+ * Future: Switch to Hibernate completely
  */
 final class SqlBuilder {
 

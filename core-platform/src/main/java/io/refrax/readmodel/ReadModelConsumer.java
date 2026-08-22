@@ -61,6 +61,9 @@ public class ReadModelConsumer {
                 .flatMap(this::drainFrom);
     }
 
+    /** Drains the log from a given seq, in batches, until it reaches the end. Returns the new cursor.
+     * Is recursive, but each batch is a new transaction and on a worker thread, so it won't blow the stack.
+     */
     private Uni<Long> drainFrom(long from) {
         return client.withTransaction(conn -> conn.preparedQuery(
                                 "select seq, event_type, payload, valid_time from events "

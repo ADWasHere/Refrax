@@ -14,9 +14,9 @@ class FieldDeclarationTest {
     @Test
     void cannotBuildAFieldWithoutVocabulary() {
         assertThrows(IllegalArgumentException.class,
-                () -> new FieldDeclaration("value", FieldRole.PROPERTY, null, false));
+                () -> new FieldDeclaration("value", FieldRole.PROPERTY, FieldType.NUMBER, null, false));
         assertThrows(IllegalArgumentException.class,
-                () -> new FieldDeclaration("value", FieldRole.PROPERTY, "   ", false));
+                () -> new FieldDeclaration("value", FieldRole.PROPERTY, FieldType.NUMBER, "   ", false));
     }
 
     @Test
