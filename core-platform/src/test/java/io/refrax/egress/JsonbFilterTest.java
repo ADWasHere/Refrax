@@ -10,6 +10,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -32,6 +33,18 @@ class JsonbFilterTest {
 
         assertTrue(q.sql().contains("::numeric >= $3::numeric"));
         assertEquals(List.of("value", "value", new BigDecimal("12.5")), q.params());
+    }
+
+    @Test
+    void numericComparisonUsesNumericCastToAvoidLexicographicOrdering() {
+        SqlBuilder q = new SqlBuilder("select * from reading_latest where 1=1");
+
+        JsonbFilter.appendJsonbFilter(q, "value", NUMBER_FIELD, "gte", "20");
+
+        assertTrue(q.sql().contains("::numeric >= $3::numeric"));
+        assertFalse(q.sql().contains("::text >=") || q.sql().contains("->> 'value' >="));
+        assertEquals(List.of("value", "value", new BigDecimal("20")), q.params());
+        assertEquals(BigDecimal.class, q.params().get(2).getClass());
     }
 
     @Test
