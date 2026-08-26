@@ -1,6 +1,7 @@
 package io.refrax.tenant;
 
 import jakarta.annotation.Priority;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -13,14 +14,14 @@ import jakarta.ws.rs.ext.Provider;
 public class TenantResolverFilter implements ContainerRequestFilter {
 
     @Inject
-    TenantResolver tenantResolver;
+    Instance<TenantResolver> tenantResolver;
 
     @Inject
     TenantContext tenantContext;
 
     @Override
     public void filter(ContainerRequestContext requestContext) {
-        String tenantId = tenantResolver.resolveTenantId(requestContext);
+        String tenantId = tenantResolver.get().resolveTenantId(requestContext);
 
         if (tenantId == null || tenantId.isBlank()) {
             requestContext.abortWith(Response.status(Response.Status.FORBIDDEN)

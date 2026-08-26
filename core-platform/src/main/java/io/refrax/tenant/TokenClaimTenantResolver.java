@@ -1,18 +1,22 @@
 package io.refrax.tenant;
 
-import jakarta.enterprise.context.ApplicationScoped;
+import io.quarkus.arc.lookup.LookupIfProperty;
+import io.quarkus.security.identity.SecurityIdentity;
+import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import io.quarkus.security.identity.SecurityIdentity;
 
 /**
  * Resolves tenant id from claims in the already-verified security identity (OIDC).
  * The claim path is configurable (dot-separated for nested maps). This resolver
  * trusts the token provided by Quarkus OIDC and does NOT read tenant from the
  * HTTP payload.
+ *
+ * This bean is only created at build-time when refrax.tenant.resolver=token-claim
  */
-@ApplicationScoped
+@LookupIfProperty(name = "refrax.tenant.resolver", stringValue = "token-claim")
+@RequestScoped
 public class TokenClaimTenantResolver implements TenantResolver {
 
     private final SecurityIdentity identity;

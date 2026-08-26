@@ -3,6 +3,7 @@ package io.refrax.schema;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import io.refrax.shared.FileReaderHelper;
 import org.jspecify.annotations.NonNull;
 
 import java.io.IOException;
@@ -19,7 +20,6 @@ import java.util.Objects;
  * job.
  */
 public final class SchemaLoader {
-
     private static final String DEFAULT_URN_NAMESPACE = "urn:refrax";
 
     private static final JsonMapper MAPPER = JsonMapper.builder()
@@ -42,12 +42,9 @@ public final class SchemaLoader {
     }
 
     private static SchemaDocument read(String location) {
-        ClassLoader cl = Thread.currentThread().getContextClassLoader();
-        try (InputStream in = cl.getResourceAsStream(location)) {
-            if (in == null) {
-                throw new SchemaValidationException("Schema resource not found on classpath: " + location);
-            }
-            return MAPPER.readValue(in, SchemaDocument.class);
+        try (InputStream stream = FileReaderHelper.openStream(location)) {
+            SchemaDocument document = MAPPER.readValue(stream, SchemaDocument.class);
+            return document;
         } catch (IOException e) {
             throw new SchemaValidationException("Failed to parse schema '" + location + "': " + e.getMessage());
         }

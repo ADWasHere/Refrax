@@ -35,7 +35,8 @@ public class EventIngestResource {
         IncomingEvent incomingEvent = incomingEventValidator.from(event);
 
         String eventType = incomingEvent.eventType();
-        JsonObject payload = new JsonObject(incomingEvent.fields());
+        Map<String, Object> mutableFields = new java.util.HashMap<>(incomingEvent.fields());
+        JsonObject payload = new JsonObject(mutableFields);
         // Ensure any tenant-like field in the payload is ignored and not treated as authority
         payload.remove("tenant");
         payload.remove("tenantId");

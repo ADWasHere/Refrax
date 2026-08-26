@@ -1,71 +1,58 @@
 package io.refrax.tenant;
 
-import org.junit.jupiter.api.Test;
-
+import io.quarkus.test.InjectMock;
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.Response;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.*;
 
-import static org.junit.jupiter.api.Assertions.*;
-
+@QuarkusTest
 class TenantResolverFilterTest {
+
+    @Inject
+    TenantResolverFilter filter;
+
+    @Inject
+    TenantContext tenantContext;
+
+    @InjectMock
+    HeaderTenantResolver tenantResolverMock;
+
+    private ContainerRequestContext ctx;
+
+    @BeforeEach
+    void setUp() {
+        ctx = mock(ContainerRequestContext.class);
+    }
 
     @Test
     void setsTenantContextWhenResolverReturnsTenant() {
-        TenantResolverFilter filter = new TenantResolverFilter();
-        filter.tenantResolver = requestContext -> "t-42";
-        filter.tenantContext = new TenantContext();
-
-        // requestContext isn't used by the resolver in this case; pass a simple proxy
-        ContainerRequestContext ctx = createSimpleCtxProxy();
+        when(tenantResolverMock.resolveTenantId(ctx)).thenReturn("t-42");
 
         filter.filter(ctx);
 
-        assertEquals("t-42", filter.tenantContext.getTenantId());
+        assertEquals("t-42", tenantContext.getTenantId());
+        verify(ctx, never()).abortWith(any());
     }
 
     @Test
     void abortsWhenResolverReturnsNull() {
-        TenantResolverFilter filter = new TenantResolverFilter();
-        filter.tenantResolver = requestContext -> null;
-        filter.tenantContext = new TenantContext();
-
-        // create proxy that captures abortWith argument
-        final Response[] captured = new Response[1];
-        InvocationHandler handler = new InvocationHandler() {
-            @Override
-            public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-                if ("abortWith".equals(method.getName()) && args != null && args.length == 1) {
-                    captured[0] = (Response) args[0];
-                    return null;
-                }
-                return null;
-            }
-        };
-        ContainerRequestContext ctx = (ContainerRequestContext) Proxy.newProxyInstance(
-                ContainerRequestContext.class.getClassLoader(),
-                new Class[]{ContainerRequestContext.class},
-                handler);
+        when(tenantResolverMock.resolveTenantId(ctx)).thenReturn(null);
 
         filter.filter(ctx);
 
-        assertNotNull(captured[0]);
-        assertEquals(Response.Status.FORBIDDEN.getStatusCode(), captured[0].getStatus());
-    }
+        ArgumentCaptor<Response> captor = ArgumentCaptor.forClass(Response.class);
+        verify(ctx).abortWith(captor.capture());
 
-    private static ContainerRequestContext createSimpleCtxProxy() {
-        InvocationHandler handler = new InvocationHandler() {
-            @Override
-            public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-                return null;
-            }
-        };
-        return (ContainerRequestContext) Proxy.newProxyInstance(
-                ContainerRequestContext.class.getClassLoader(),
-                new Class[]{ContainerRequestContext.class},
-                handler);
+        Response response = captor.getValue();
+        assertNotNull(response);
+        assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
     }
 }

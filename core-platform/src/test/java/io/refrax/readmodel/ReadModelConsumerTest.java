@@ -33,13 +33,16 @@ class ReadModelConsumerTest {
                   "payload": { "sensorId": "%s", "metric": "PM2.5", "value": %s, "unit": "ug/m3",
                                "deviceDbId": 999999, "userId": "u-1" } }
                 """.formatted(UUID.randomUUID(), sensorId, value);
-        return given().contentType("application/json").body(event)
+        return given().contentType("application/json")
+                .header("X-Tenant-ID", "test-tenant")
+                .body(event)
                 .when().post("/v1/events").then().statusCode(202)
                 .extract().jsonPath().getLong("seq");
     }
 
     private float latest(String sensorId) {
-        return given().queryParam("sensor", sensorId)
+        return given().header("X-Tenant-ID", "test-tenant")
+                .queryParam("sensor", sensorId)
                 .when().get("/v1/views/air-quality-full/latest")
                 .then().statusCode(200)
                 .extract().jsonPath().getFloat("value");
