@@ -1,3 +1,4 @@
+version: '3.8'
 services:
   db:
     image: timescale/timescaledb-ha:pg17
@@ -10,5 +11,32 @@ services:
     volumes:
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
       - refrax-db:/home/postgres/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d refrax"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  core:
+    image: refrax/core-platform:0.1.2-SNAPSHOT
+    container_name: core-platform
+    restart: always
+    ports:
+      - "${HTTP_PORT:-8787}:${HTTP_PORT:-8787}"
+    environment:
+      HTTP_PORT: ${HTTP_PORT:-8787}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_URL: ${DB_URL:-postgresql://db:5432/refrax}
+      REFRAX_SCHEMA_LOCATIONS: /configs/schemas/air-quality-reading.json
+      REFRAX_VIEW_LOCATIONS: /configs/views/air-quality-full.json,/configs/views/air-quality-value-only.json
+      REFRAX_TENANT_RESOLVER: header
+    volumes:
+      - ./configs/schemas:/configs/schemas:ro
+      - ./configs/views:/configs/views:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   refrax-db:

@@ -1,5 +1,7 @@
 package io.refrax.schema;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
+
 /**
  * The semantic role a declared field plays in the domain model.
  *
@@ -7,6 +9,7 @@ package io.refrax.schema;
  * declaration at all — internality is the absence of a role, not a role. The set is
  * closed and compiler-checked, so a misspelt or invented role cannot be declared.
  */
+@RegisterForReflection
 public enum FieldRole {
 
     /** Component of the domain identity; the entity URN is built only from these. */

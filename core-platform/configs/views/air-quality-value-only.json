@@ -1,0 +1,8 @@
+{
+  "name": "air-quality-value-only",
+  "eventType": "AirQualityReading",
+  "exposes": ["value", "unit"],
+  "queryable": {
+    "sensor": { "field": "sensorId", "match": "exact" }
+  }
+}
