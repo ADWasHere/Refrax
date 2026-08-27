@@ -1,6 +1,7 @@
 package io.refrax.schema;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import io.quarkus.runtime.annotations.RegisterForReflection;
 
 import java.util.Map;
 
@@ -22,6 +23,7 @@ import java.util.Map;
  * @param exposable    field name → field spec, in declaration order
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
+@RegisterForReflection
 public record SchemaDocument(
         String refraxSchema,
         String eventType,
@@ -39,6 +41,7 @@ public record SchemaDocument(
      * @param personalData  whether the field is personal data (optional, defaults false)
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @RegisterForReflection
     public record FieldSpec(
             FieldRole role,
             FieldType type,
