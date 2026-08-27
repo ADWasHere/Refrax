@@ -3,9 +3,9 @@ package io.refrax.view;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import io.refrax.shared.FileReaderHelper;
 
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -36,14 +36,10 @@ public final class ViewLoader {
     }
 
     private static ViewDocument read(String location) {
-        ClassLoader cl = Thread.currentThread().getContextClassLoader();
-        try (InputStream in = cl.getResourceAsStream(location)) {
-            if (in == null) {
-                throw new ViewValidationException("View resource not found on classpath: " + location);
-            }
+        try (InputStream in = FileReaderHelper.openStream(location)) {
             return MAPPER.readValue(in, ViewDocument.class);
         } catch (IOException e) {
-            throw new ViewValidationException("Failed to parse view '" + location + "': " + e.getMessage());
+            throw new ViewValidationException("Failed to read view '" + location + "': " + e.getMessage());
         }
     }
 

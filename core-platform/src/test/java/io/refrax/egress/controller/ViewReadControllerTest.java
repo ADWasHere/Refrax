@@ -18,7 +18,8 @@ class ViewReadControllerTest extends EgressTestSupport {
     void valueOnlyViewHidesMetricInNative() {
         String sensorId = ingestReading("sensor-" + UUID.randomUUID(), 14.7);
 
-        given().queryParam("sensor", sensorId)
+        given().header("X-Tenant-ID", "test-tenant")
+                .queryParam("sensor", sensorId)
                 .when().get("/v1/views/air-quality-value-only/latest")
                 .then().statusCode(200)
                 .body("value", equalTo(14.7f))
@@ -32,7 +33,8 @@ class ViewReadControllerTest extends EgressTestSupport {
     void valueOnlyViewHidesMetricInNgsiLd() {
         String sensorId = ingestReading("sensor-" + UUID.randomUUID(), 14.7);
 
-        given().queryParam("sensor", sensorId)
+        given().header("X-Tenant-ID", "test-tenant")
+                .queryParam("sensor", sensorId)
                 .queryParam("format", "ngsi-ld")
                 .when().get("/v1/views/air-quality-value-only/latest")
                 .then().statusCode(200)
@@ -46,7 +48,8 @@ class ViewReadControllerTest extends EgressTestSupport {
     void fullViewExposesMetric() {
         String sensorId = ingestReading("sensor-" + UUID.randomUUID(), 14.7);
 
-        given().queryParam("sensor", sensorId)
+        given().header("X-Tenant-ID", "test-tenant")
+                .queryParam("sensor", sensorId)
                 .when().get("/v1/views/air-quality-full/latest")
                 .then().statusCode(200)
                 .body("metric", equalTo("PM2.5"))
@@ -55,21 +58,24 @@ class ViewReadControllerTest extends EgressTestSupport {
 
     @Test
     void queryOnUndeclaredAxisIsRejected() {
-        given().queryParam("metric", "PM2.5")
+        given().header("X-Tenant-ID", "test-tenant")
+                .queryParam("metric", "PM2.5")
                 .when().get("/v1/views/air-quality-value-only/latest")
                 .then().statusCode(400);
     }
 
     @Test
     void unknownViewIsRejected() {
-        given().queryParam("sensor", "whatever")
+        given().header("X-Tenant-ID", "test-tenant")
+                .queryParam("sensor", "whatever")
                 .when().get("/v1/views/does-not-exist/latest")
                 .then().statusCode(400);
     }
 
     @Test
     void unknownFormatIsRejected() {
-        given().queryParam("sensor", "whatever")
+        given().header("X-Tenant-ID", "test-tenant")
+                .queryParam("sensor", "whatever")
                 .queryParam("format", "xml")
                 .when().get("/v1/views/air-quality-full/latest")
                 .then().statusCode(400);
@@ -77,7 +83,8 @@ class ViewReadControllerTest extends EgressTestSupport {
 
     @Test
     void unmatchedIdentityYieldsNotFound() {
-        given().queryParam("sensor", "sensor-" + UUID.randomUUID())
+        given().header("X-Tenant-ID", "test-tenant")
+                .queryParam("sensor", "sensor-" + UUID.randomUUID())
                 .when().get("/v1/views/air-quality-full/latest")
                 .then().statusCode(404);
     }

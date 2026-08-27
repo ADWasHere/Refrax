@@ -24,6 +24,9 @@ public class EventIngestResource {
     @Inject
     IncomingEventValidator incomingEventValidator;
 
+    @Inject
+    io.refrax.tenant.TenantContext tenantContext;
+
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> append(JsonObject event) {
@@ -32,13 +35,19 @@ public class EventIngestResource {
         IncomingEvent incomingEvent = incomingEventValidator.from(event);
 
         String eventType = incomingEvent.eventType();
-        JsonObject payload = new JsonObject(incomingEvent.fields());
+        Map<String, Object> mutableFields = new java.util.HashMap<>(incomingEvent.fields());
+        JsonObject payload = new JsonObject(mutableFields);
+        // Ensure any tenant-like field in the payload is ignored and not treated as authority
+        payload.remove("tenant");
+        payload.remove("tenantId");
+
         OffsetDateTime validTime = OffsetDateTime.ofInstant(incomingEvent.occurredAt(), java.time.ZoneOffset.UTC);
 
         String eventIdStr = event.getString("eventId");
         UUID eventId = (eventIdStr != null) ? UUID.fromString(eventIdStr) : UUID.randomUUID();
 
-        String tenantId = "default"; //TODO Enable later tenants with keys for deleting
+        // Tenant must come from the resolved authenticated context
+        String tenantId = tenantContext.getTenantId();
         String schemaVersion = "v1";
 
         return client.preparedQuery(

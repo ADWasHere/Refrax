@@ -24,7 +24,19 @@ public class SchemaRegistry {
 
     // Schemas load before views (which validate against them) — lower priority runs first.
     void onStart(@Observes @Priority(100) StartupEvent event) {
-        schemas.putAll(loadAll(locations));
+        try {
+            schemas.putAll(loadAll(locations));
+        } catch (SchemaValidationException e) {
+            if (isMissingResourceFailure(e)) {
+                return;
+            }
+            throw e;
+        }
+    }
+
+    private static boolean isMissingResourceFailure(SchemaValidationException e) {
+        String message = e.getMessage();
+        return message != null && (message.contains("not found") || message.contains("Resource neither found"));
     }
 
     /**
