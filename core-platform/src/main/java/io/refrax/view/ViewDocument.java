@@ -1,6 +1,7 @@
 package io.refrax.view;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import io.quarkus.runtime.annotations.RegisterForReflection;
 
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,7 @@ import java.util.Map;
  * @param queryable axis name → axis spec
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
+@RegisterForReflection
 public record ViewDocument(
         String name,
         String eventType,

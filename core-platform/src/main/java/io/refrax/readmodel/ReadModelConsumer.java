@@ -56,8 +56,7 @@ public class ReadModelConsumer {
 
     /** Processes every event after the cursor, advancing it as it goes. Returns the new cursor. */
     public Uni<Long> catchUp() {
-        return store.ensureSchema()
-                .flatMap(v -> store.cursor(CONSUMER))
+        return store.cursor(CONSUMER)
                 .flatMap(this::drainFrom);
     }
 
@@ -101,14 +100,13 @@ public class ReadModelConsumer {
 
     /** Deletes both read models and the cursor, then rebuilds them from the log. */
     public Uni<Long> replayAll() {
-        return store.ensureSchema()
-                .flatMap(v -> store.reset())
+        return store.reset()
                 .flatMap(v -> catchUp());
     }
 
     /** Re-derives a single entity's current-state row from the log, touching nothing else. */
     public Uni<Void> reprojectEntity(String eventType, String identityField, String identityValue) {
-        return store.ensureSchema().flatMap(v -> client.withTransaction(conn -> conn.preparedQuery(
+        return client.withTransaction(conn -> conn.preparedQuery(
                                 "select seq, event_type, payload, valid_time from events "
                                         + "where event_type = $1 and payload ->> $2 = $3 order by seq desc limit 1")
                         .execute(Tuple.of(eventType, identityField, identityValue))
@@ -125,7 +123,7 @@ public class ReadModelConsumer {
                             accumulate(entry, latest, series);
 
                             return store.upsertLatest(conn, latest);
-                        })));
+                        }));
     }
 
     private void accumulate(final JournalEntry entry, List<LatestRow> latest, List<SeriesRow> series) {
