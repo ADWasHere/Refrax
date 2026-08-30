@@ -7,6 +7,7 @@ import io.vertx.mutiny.sqlclient.Row;
 import io.vertx.mutiny.sqlclient.RowSet;
 import io.vertx.mutiny.sqlclient.Tuple;
 import jakarta.inject.Inject;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -26,6 +27,35 @@ class ReadModelConsumerTest {
 
     @Inject
     PgPool client;
+
+    @BeforeEach
+    void ensureReadModelSchemaExists() {
+        client.query("""
+                create table if not exists projection_cursor (
+                    projection text primary key,
+                    position bigint not null
+                );
+                create table if not exists reading_latest (
+                    event_type text not null,
+                    entity_id text not null,
+                    exposed_json jsonb not null,
+                    observed_at timestamptz,
+                    seq bigint not null,
+                    primary key (event_type, entity_id)
+                );
+                create table if not exists reading_series (
+                    event_type text not null,
+                    seq bigint not null,
+                    entity_id text not null,
+                    exposed_json jsonb not null,
+                    observed_at timestamptz not null,
+                    primary key (event_type, seq, observed_at)
+                );
+                select create_hypertable('reading_series', 'observed_at', if_not_exists => true, migrate_data => true);
+                create index if not exists reading_series_entity_time
+                    on reading_series (event_type, entity_id, observed_at desc);
+                """).execute().await().indefinitely();
+    }
 
     private long post(String sensorId, double value) {
         String event = """
@@ -103,13 +133,15 @@ class ReadModelConsumerTest {
     void readModelOutageDoesNotBlockIngest() {
         String sensor = "sensor-" + UUID.randomUUID();
 
-        // Simulate a read-model outage.
-        client.query("drop table if exists reading_latest").execute().await().indefinitely();
+        // Simulate a read-model outage by dropping the tables that power the projection.
+        client.query("drop table if exists reading_latest; drop table if exists reading_series; delete from projection_cursor")
+                .execute().await().indefinitely();
 
         // Ingest still succeeds — the log is the source of truth and must always be writable.
         post(sensor, 7.7);
 
-        // The projection recovers and catches up.
+        // The projection recovers and catches up after the read-model schema is restored.
+        ensureReadModelSchemaExists();
         consumer.catchUp().await().indefinitely();
         assertEquals(7.7f, latest(sensor));
     }
