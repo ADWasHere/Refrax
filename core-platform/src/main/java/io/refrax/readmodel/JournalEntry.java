@@ -1,7 +1,7 @@
 package io.refrax.readmodel;
 
+import io.refrax.ingestion.Events;
 import io.vertx.core.json.JsonObject;
-import io.vertx.mutiny.sqlclient.Row;
 
 import java.time.OffsetDateTime;
 
@@ -11,12 +11,13 @@ public record JournalEntry(
         JsonObject payload,
         OffsetDateTime validTime
 ) {
-    public static JournalEntry fromRow(Row row) {
+
+    public static JournalEntry fromEntity(Events event) {
         return new JournalEntry(
-                row.getLong("seq"),
-                row.getString("event_type"),
-                (JsonObject) row.getValue("payload"),
-                row.getOffsetDateTime("valid_time")
+                event.getSeq(),
+                event.getEventType(),
+                new JsonObject(event.getPayload()),
+                event.getValidTime()
         );
     }
 }

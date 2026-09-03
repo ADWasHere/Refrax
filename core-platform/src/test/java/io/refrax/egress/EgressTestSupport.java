@@ -1,9 +1,12 @@
 package io.refrax.egress;
 
+import io.quarkus.vertx.VertxContextSupport;
 import io.refrax.readmodel.ReadModelConsumer;
+import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static io.restassured.RestAssured.given;
 
@@ -11,6 +14,19 @@ public abstract class EgressTestSupport {
 
     @Inject
     protected ReadModelConsumer consumer;
+
+    /**
+     * Bridges a reactive Panache operation onto a Vert.x context and blocks for the result. A
+     * {@code @QuarkusTest} method runs on the main thread, where reactive Panache has no context;
+     * the {@link Uni} is built inside the supplier so its transaction binds to that context.
+     */
+    protected static <T> T await(Supplier<Uni<T>> action) {
+        try {
+            return VertxContextSupport.subscribeAndAwait(action::get);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
 
     protected String ingestReading(String sensorId, double value) {
         String event = """
@@ -28,7 +44,7 @@ public abstract class EgressTestSupport {
                 .header("X-Tenant-ID", "test-tenant")
                 .body(event)
                 .when().post("/v1/events").then().statusCode(202);
-        consumer.catchUp().await().indefinitely();
+        await(() -> consumer.catchUp());
         return sensorId;
     }
 
@@ -60,7 +76,7 @@ public abstract class EgressTestSupport {
                 .body(event)
                 .when().post("/v1/events").then().statusCode(202)
                 .extract().jsonPath().getLong("seq");
-        consumer.catchUp().await().indefinitely();
+        await(() -> consumer.catchUp());
         return seq;
     }
 }

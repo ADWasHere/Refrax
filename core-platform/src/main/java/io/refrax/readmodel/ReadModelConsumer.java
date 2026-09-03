@@ -6,10 +6,7 @@ import io.refrax.gate.Gate;
 import io.refrax.schema.EventSchema;
 import io.refrax.schema.SchemaRegistry;
 import io.smallrye.mutiny.Uni;
-import io.smallrye.mutiny.infrastructure.Infrastructure;
 import io.vertx.core.json.JsonObject;
-import io.vertx.mutiny.pgclient.PgPool;
-import io.vertx.mutiny.sqlclient.Tuple;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -34,9 +31,6 @@ public class ReadModelConsumer {
 
     static final String CONSUMER = "latest+series";
     private static final int BATCH = 500;
-
-    @Inject
-    PgPool client;
 
     @Inject
     ReadModelStore store;
@@ -64,35 +58,27 @@ public class ReadModelConsumer {
      * Is recursive, but each batch is a new transaction and on a worker thread, so it won't blow the stack.
      */
     private Uni<Long> drainFrom(long from) {
-        return client.withTransaction(conn -> conn.preparedQuery(
-                                "select seq, event_type, payload, valid_time from events "
-                                        + "where seq > $1 order by seq asc limit " + BATCH)
-                        .execute(Tuple.of(from))
-                        .emitOn(Infrastructure.getDefaultWorkerPool()) // To workerpool
-                        .flatMap(rows -> {
-                            if (rows.rowCount() == 0) {
-                                return Uni.createFrom().item(new Batch(from, 0));
-                            }
+        return store.readEventsAfter(from, BATCH)
+                .flatMap(entries -> {
+                    if (entries.isEmpty()) {
+                        return Uni.createFrom().item(new Batch(from, 0));
+                    }
 
-                            List<JournalEntry> entries = rows.stream()
-                                    .map(JournalEntry::fromRow)
-                                    .toList();
+                    List<LatestRow> latest = new ArrayList<>();
+                    List<SeriesRow> series = new ArrayList<>();
 
-                            List<LatestRow> latest = new ArrayList<>();
-                            List<SeriesRow> series = new ArrayList<>();
+                    for (JournalEntry entry : entries) {
+                        accumulate(entry, latest, series);
+                    }
 
-                            for (JournalEntry entry : entries) {
-                                accumulate(entry, latest, series);
-                            }
+                    long cursor = entries.getLast().seq();
+                    int count = entries.size();
 
-                            long cursor = entries.getLast().seq();
-                            int count = entries.size();
-
-                            return store.insertSeries(conn, series)
-                                    .flatMap(v -> store.upsertLatest(conn, latest))
-                                    .flatMap(v -> store.saveCursor(conn, CONSUMER, cursor))
-                                    .replaceWith(new Batch(cursor, count));
-                        }))
+                    return store.insertSeries(series)
+                            .flatMap(v -> store.upsertLatest(latest))
+                            .flatMap(v -> store.saveCursor(CONSUMER, cursor))
+                            .replaceWith(new Batch(cursor, count));
+                })
                 .flatMap(batch -> batch.count() < BATCH
                         ? Uni.createFrom().item(batch.cursor())
                         : drainFrom(batch.cursor()));
@@ -106,24 +92,18 @@ public class ReadModelConsumer {
 
     /** Re-derives a single entity's current-state row from the log, touching nothing else. */
     public Uni<Void> reprojectEntity(String eventType, String identityField, String identityValue) {
-        return client.withTransaction(conn -> conn.preparedQuery(
-                                "select seq, event_type, payload, valid_time from events "
-                                        + "where event_type = $1 and payload ->> $2 = $3 order by seq desc limit 1")
-                        .execute(Tuple.of(eventType, identityField, identityValue))
-                        .emitOn(Infrastructure.getDefaultWorkerPool())
-                        .flatMap(rows -> {
-                            if (rows.rowCount() == 0) {
-                                return Uni.createFrom().voidItem();
-                            }
+        return store.findLatestEvent(eventType, identityField, identityValue)
+                .flatMap(entry -> {
+                    if (entry == null) {
+                        return Uni.createFrom().voidItem();
+                    }
 
-                            JournalEntry entry = JournalEntry.fromRow(rows.iterator().next());
+                    List<LatestRow> latest = new ArrayList<>();
+                    List<SeriesRow> series = new ArrayList<>();
+                    accumulate(entry, latest, series);
 
-                            List<LatestRow> latest = new ArrayList<>();
-                            List<SeriesRow> series = new ArrayList<>();
-                            accumulate(entry, latest, series);
-
-                            return store.upsertLatest(conn, latest);
-                        }));
+                    return store.upsertLatest(latest);
+                });
     }
 
     private void accumulate(final JournalEntry entry, List<LatestRow> latest, List<SeriesRow> series) {

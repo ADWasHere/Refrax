@@ -42,7 +42,7 @@ class ViewQueryServiceTest extends EgressTestSupport {
                 .header("X-Tenant-ID", "test-tenant")
                 .body(pollutedEvent)
                 .when().post("/v1/events").then().statusCode(202);
-        consumer.catchUp().await().indefinitely();
+        await(() -> consumer.catchUp());
 
         given().header("X-Tenant-ID", "test-tenant")
                 .queryParam("sensor", sensorId)
@@ -67,7 +67,7 @@ class ViewQueryServiceTest extends EgressTestSupport {
         ingestAt(sensor, "2026-07-02T10:00:00Z", 1.0);
         ingestAt(sensor, "2026-07-02T10:05:00Z", 2.0);
         ingestAt(sensor, "2026-07-02T10:10:00Z", 3.0);
-        consumer.catchUp().await().indefinitely();
+        await(() -> consumer.catchUp());
 
         JsonPath series = given().header("X-Tenant-ID", "test-tenant")
                 .queryParam("sensor", sensor)
