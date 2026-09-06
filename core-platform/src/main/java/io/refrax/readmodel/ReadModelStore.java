@@ -1,129 +1,128 @@
 package io.refrax.readmodel;
 
+import io.quarkus.hibernate.reactive.panache.Panache;
+import io.refrax.ingestion.Events;
+import io.refrax.projection.ProjectionCursor;
+import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
-import io.vertx.mutiny.pgclient.PgPool;
-import io.vertx.mutiny.sqlclient.SqlClient;
-import io.vertx.mutiny.sqlclient.Tuple;
+import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 
 import java.util.List;
 
 /**
- * Persistence for the read models and the consumer cursor. The consumer owns its own
- * schema (there is no migration tool yet), creating it idempotently, so it can be dropped
- * and rebuilt from the log at will. Two read models are maintained:
+ * Persistence for the read models and the consumer cursor. The schema is owned by Flyway
+ * (see {@code db/migration}); the read models remain disposable and can be wiped and rebuilt
+ * from the log at will (see {@link #reset()}). Two read models are maintained:
  *
  * <ul>
  *   <li>{@code reading_latest} — latest projection per identity (the current-state read);</li>
  *   <li>{@code reading_series} — every projection by valid-time (the time-series read). On a
- *       TimescaleDB deployment it is a hypertable (see {@code docker/initdb}); it carries no
- *       unique index excluding the partition column, so idempotency comes from the consumer's
- *       atomic (insert + cursor) transaction, not from {@code on conflict}.</li>
+ *       TimescaleDB deployment it is a hypertable; it carries no unique index excluding the
+ *       partition column, so idempotency comes from the consumer's atomic (insert + cursor)
+ *       transaction, not from {@code on conflict}.</li>
  * </ul>
- *
- * Write methods take a {@link SqlClient} so the consumer can run them inside one transaction.
  */
 @ApplicationScoped
 public class ReadModelStore {
 
-    private static final String DDL = """
-            -- Cursor: one row per independently rebuildable projection
-            create table if not exists projection_cursor (
-                projection text primary key,
-                position   bigint not null
-            );
-            
-            -- Latest read model: one row per entity, upserted
-            create table if not exists reading_latest (
-                event_type    text        not null,
-                entity_id     text        not null,
-                exposed_json  jsonb       not null,
-                observed_at   timestamptz,
-                seq           bigint      not null,
-                primary key (event_type, entity_id)
-            );
-            
-            -- Time-series read model: all rows, becomes a hypertable
-            create table if not exists reading_series (
-                event_type    text        not null,
-                seq           bigint      not null,
-                entity_id     text        not null,
-                exposed_json  jsonb       not null,
-                observed_at   timestamptz not null,
-                primary key (event_type, seq, observed_at)
-            );
-            
-            -- Turn reading_series into a hypertable partitioned by time
-            select create_hypertable(
-                'reading_series', 'observed_at',
-                if_not_exists => true,
-                migrate_data  => true
-            );
-            
-            create index if not exists reading_series_entity_time
-                on reading_series (event_type, entity_id, observed_at desc);
-            """;
-
-    @Inject
-    PgPool client;
-
-    public Uni<Void> ensureSchema() {
-        return client.query(DDL).execute().replaceWithVoid();
-    }
-
     public Uni<Long> cursor(final String projection) {
-        return client.preparedQuery("select position from projection_cursor where projection = $1")
-                .execute(Tuple.of(projection))
-                .map(rows -> rows.rowCount() == 0 ? 0L : rows.iterator().next().getLong("position"));
+        return Panache.withTransaction(() -> ProjectionCursor.findByProjection(projection)
+                .map(cursor -> cursor == null ? 0L : cursor.getPosition()));
     }
 
-    public Uni<Void> saveCursor(SqlClient exec, final String projection, final long position) {
-        return exec.preparedQuery(
-                        "insert into projection_cursor (projection, position) values ($1, $2) "
-                                + "on conflict (projection) do update set position = excluded.position")
-                .execute(Tuple.of(projection, position))
-                .replaceWithVoid();
+    public Uni<Void> saveCursor(final String projection, final long position) {
+        return Panache.withTransaction(() -> ProjectionCursor.findByProjection(projection)
+                .flatMap(cursor -> {
+                    if (cursor == null) {
+                        cursor = new ProjectionCursor();
+                        cursor.setProjection(projection);
+                    }
+                    cursor.setPosition(position);
+                    return cursor.persistAndFlush().replaceWithVoid();
+                }));
     }
 
-    public Uni<Void> upsertLatest(SqlClient exec, List<LatestRow> rows) {
+    public Uni<Void> upsertLatest(List<LatestRow> rows) {
         if (rows.isEmpty()) {
             return Uni.createFrom().voidItem();
         }
 
-        List<Tuple> tuples = rows.stream().map(r -> Tuple.of(
-                r.eventType(), r.entityId(), r.exposedJson(), r.observedAt(), r.seq()
-        )).toList();
-
-        return exec.preparedQuery(
-                "insert into reading_latest (event_type, entity_id, exposed_json, observed_at, seq) "
-                        + "values ($1, $2, $3, $4, $5) "
-                        + "on conflict (event_type, entity_id) do update set "
-                        + "exposed_json = excluded.exposed_json, "
-                        + "observed_at = excluded.observed_at, "
-                        + "seq = excluded.seq "
-                        + "where excluded.seq >= reading_latest.seq"
-        ).executeBatch(tuples).replaceWithVoid();
+        return Panache.withTransaction(() -> Multi.createFrom().iterable(rows)
+                .onItem().transformToUni(row -> {
+                    ReadingLatestId id = new ReadingLatestId(row.eventType(), row.entityId());
+                    return ReadingLatest.<ReadingLatest>find("id = ?1", id).firstResult()
+                            .flatMap(latest -> {
+                                ReadingLatest latestEntity = latest == null ? new ReadingLatest() : latest;
+                                if (latest == null) {
+                                    latestEntity.setId(id);
+                                }
+                                if (latestEntity.getSeq() == null || row.seq() >= latestEntity.getSeq()) {
+                                    latestEntity.setExposedJson(row.exposedJson().encode());
+                                    latestEntity.setObservedAt(row.observedAt());
+                                    latestEntity.setSeq(row.seq());
+                                    return latestEntity.persistAndFlush().replaceWithVoid();
+                                }
+                                return Uni.createFrom().voidItem();
+                            });
+                })
+                .concatenate()
+                .collect().asList()
+                .replaceWithVoid());
     }
 
-    public Uni<Void> insertSeries(SqlClient exec, List<SeriesRow> rows) {
+    public Uni<Void> insertSeries(List<SeriesRow> rows) {
         if (rows.isEmpty()) {
             return Uni.createFrom().voidItem();
         }
-        List<Tuple> tuples = rows.stream().map(r -> Tuple.of(
-                r.eventType(), r.seq(), r.entityId(), r.exposedJson(), r.observedAt()
-        )).toList();
 
-        return exec.preparedQuery(
-                "insert into reading_series (event_type, seq, entity_id, exposed_json, observed_at) "
-                        + "values ($1, $2, $3, $4, $5)"
-        ).executeBatch(tuples).replaceWithVoid();
+        return Panache.withTransaction(() -> Multi.createFrom().iterable(rows)
+                .onItem().transformToUni(row -> {
+                    ReadingSeriesId id = new ReadingSeriesId(row.eventType(), row.seq(), row.observedAt());
+                    return ReadingSeries.<ReadingSeries>find("id = ?1", id).firstResult()
+                            .flatMap(entity -> {
+                                ReadingSeries entityValue = entity == null ? new ReadingSeries() : entity;
+                                if (entity == null) {
+                                    entityValue.setId(id);
+                                    entityValue.setEntityId(row.entityId());
+                                    entityValue.setExposedJson(row.exposedJson().encode());
+                                    return entityValue.persistAndFlush().replaceWithVoid();
+                                }
+                                return Uni.createFrom().voidItem();
+                            });
+                })
+                .concatenate()
+                .collect().asList()
+                .replaceWithVoid());
+    }
+
+    public Uni<List<JournalEntry>> readEventsAfter(long from, int limit) {
+        return Panache.withTransaction(() -> Events.<Events>find("seq > ?1 order by seq asc", from)
+                .page(0, limit)
+                .list()
+                .map(rows -> rows.stream().map(JournalEntry::fromEntity).toList()));
+    }
+
+    public Uni<JournalEntry> findLatestEvent(String eventType, String identityField, String identityValue) {
+        return Panache.withTransaction(() -> Events.<Events>find("eventType = ?1 order by seq desc", eventType)
+                .list()
+                .map(rows -> {
+                    for (Events row : rows) {
+                        JsonObject payload = new JsonObject(row.getPayload());
+                        String actual = payload.getString(identityField);
+                        if (identityValue.equals(actual)) {
+                            return JournalEntry.fromEntity(row);
+                        }
+                    }
+                    return null;
+                }));
     }
 
     /** Wipes both read models and the cursor, so the next catch-up rebuilds from seq 0. */
     public Uni<Void> reset() {
-        return client.query("truncate reading_latest; truncate reading_series; delete from projection_cursor")
-                .execute()
-                .replaceWithVoid();
+        return Panache.withTransaction(() -> ProjectionCursor.deleteAll()
+                .flatMap(ignored -> ReadingLatest.deleteAll())
+                .flatMap(ignored -> ReadingSeries.deleteAll())
+                .replaceWithVoid());
     }
 }

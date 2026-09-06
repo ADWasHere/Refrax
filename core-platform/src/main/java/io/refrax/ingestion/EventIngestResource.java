@@ -1,14 +1,16 @@
 package io.refrax.ingestion;
 
+import io.quarkus.hibernate.reactive.panache.Panache;
+import io.refrax.tenant.TenantContext;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
-import io.vertx.mutiny.sqlclient.Tuple;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.hibernate.exception.ConstraintViolationException;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -19,13 +21,10 @@ import java.util.UUID;
 public class EventIngestResource {
 
     @Inject
-    io.vertx.mutiny.pgclient.PgPool client;
-
-    @Inject
     IncomingEventValidator incomingEventValidator;
 
     @Inject
-    io.refrax.tenant.TenantContext tenantContext;
+    TenantContext tenantContext;
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -37,31 +36,36 @@ public class EventIngestResource {
         String eventType = incomingEvent.eventType();
         Map<String, Object> mutableFields = new java.util.HashMap<>(incomingEvent.fields());
         JsonObject payload = new JsonObject(mutableFields);
-        // Ensure any tenant-like field in the payload is ignored and not treated as authority
         payload.remove("tenant");
         payload.remove("tenantId");
 
         OffsetDateTime validTime = OffsetDateTime.ofInstant(incomingEvent.occurredAt(), java.time.ZoneOffset.UTC);
-
         String eventIdStr = event.getString("eventId");
         UUID eventId = (eventIdStr != null) ? UUID.fromString(eventIdStr) : UUID.randomUUID();
-
-        // Tenant must come from the resolved authenticated context
         String tenantId = tenantContext.getTenantId();
         String schemaVersion = "v1";
 
-        return client.preparedQuery(
-                        "insert into events (tenant_id, event_type, payload, valid_time, event_id, schema_version) " +
-                                "values ($1, $2, $3, $4, $5, $6) " +
-                                "on conflict (tenant_id, event_id) do nothing " +
-                                "returning seq")
-                .execute(Tuple.of(tenantId, eventType, payload, validTime, eventId, schemaVersion))
-                .map(rows -> {
-                    if (rows.rowCount() == 0) {
-                        return Response.accepted().entity(Map.of("status", "duplicate")).build();
-                    }
-                    Long seq = rows.iterator().next().getLong("seq");
-                    return Response.accepted().entity(Map.of("seq", seq)).build();
-                });
+        return Panache.withTransaction(() -> Events.findByTenantAndEventId(tenantId, eventId)
+                        .flatMap(existing -> {
+                            if (existing != null) {
+                                return Uni.createFrom().item(Response.accepted().entity(Map.of("status", "duplicate")).build());
+                            }
+
+                            Events entity = new Events();
+                            entity.tenantId = tenantId;
+                            entity.eventType = eventType;
+                            entity.payload = payload.encode();
+                            entity.validTime = validTime;
+                            entity.eventId = eventId;
+                            entity.schemaVersion = schemaVersion;
+
+                            return entity.persistAndFlush()
+                                    .map(saved -> {
+                                        Events savedEvent = (Events) saved;
+                                        return Response.accepted().entity(Map.of("seq", savedEvent.seq)).build();
+                                    });
+                        }))
+                .onFailure(ConstraintViolationException.class)
+                .recoverWithItem(throwable -> Response.accepted().entity(Map.of("status", "duplicate")).build());
     }
 }

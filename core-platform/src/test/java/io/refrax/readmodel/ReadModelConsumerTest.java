@@ -1,15 +1,13 @@
 package io.refrax.readmodel;
 
 import io.quarkus.test.junit.QuarkusTest;
-import io.vertx.core.json.JsonObject;
-import io.vertx.mutiny.pgclient.PgPool;
-import io.vertx.mutiny.sqlclient.Row;
-import io.vertx.mutiny.sqlclient.RowSet;
-import io.vertx.mutiny.sqlclient.Tuple;
+import io.quarkus.vertx.VertxContextSupport;
+import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,6 +15,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /**
  * P4 core: the read side is a persisted, incremental, disposable, replayable projection that
  * is decoupled from ingest.
+ *
+ * <p>The read-model schema is owned by Flyway (see {@code db/migration}) and applied on
+ * startup, so these tests hold no DDL of their own and touch persistence only through the
+ * Panache-backed {@link ReadModelStore}.
  */
 @QuarkusTest
 class ReadModelConsumerTest {
@@ -25,7 +27,21 @@ class ReadModelConsumerTest {
     ReadModelConsumer consumer;
 
     @Inject
-    PgPool client;
+    ReadModelStore store;
+
+    /**
+     * Reactive Panache operations must run on a Vert.x context; a {@code @QuarkusTest} method runs
+     * on the main thread, so bridge to one and block for the result. The {@link Uni} is built
+     * inside the supplier so its transaction binds to that context, not to the main thread.
+     * Ingest/read assertions go through the blocking REST API and stay on the main thread.
+     */
+    private static <T> T await(Supplier<Uni<T>> action) {
+        try {
+            return VertxContextSupport.subscribeAndAwait(action::get);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
 
     private long post(String sensorId, double value) {
         String event = """
@@ -53,17 +69,14 @@ class ReadModelConsumerTest {
         String sensor = "sensor-" + UUID.randomUUID();
         post(sensor, 10.0);
         post(sensor, 20.0);
-        consumer.catchUp().await().indefinitely();
+        await(() -> consumer.catchUp());
 
         // Fold the log directly (the "old" way) for the latest value...
-        RowSet<Row> rows = client.preparedQuery(
-                        "select payload from events where event_type = 'AirQualityReading' "
-                                + "and payload ->> 'sensorId' = $1 order by seq desc limit 1")
-                .execute(Tuple.of(sensor)).await().indefinitely();
-        double fromLog = ((JsonObject) rows.iterator().next().getValue("payload")).getDouble("value");
+        JournalEntry fromLog = await(() -> store.findLatestEvent("AirQualityReading", "sensorId", sensor));
+        double folded = fromLog.payload().getDouble("value");
 
         // ...and it matches the read-model-backed GET (the "new" way).
-        assertEquals((float) fromLog, latest(sensor));
+        assertEquals((float) folded, latest(sensor));
         assertEquals(20.0f, latest(sensor));
     }
 
@@ -71,11 +84,11 @@ class ReadModelConsumerTest {
     void readModelIsDisposableAndRebuildsIdenticallyOnFullReplay() {
         String sensor = "sensor-" + UUID.randomUUID();
         post(sensor, 42.0);
-        consumer.catchUp().await().indefinitely();
+        await(() -> consumer.catchUp());
         float before = latest(sensor);
 
         // Delete the read models entirely and rebuild from seq 0.
-        consumer.replayAll().await().indefinitely();
+        await(() -> consumer.replayAll());
 
         assertEquals(before, latest(sensor));
         assertEquals(42.0f, latest(sensor));
@@ -87,13 +100,13 @@ class ReadModelConsumerTest {
         String b = "sensor-" + UUID.randomUUID();
         post(a, 1.0);
         post(b, 2.0);
-        consumer.catchUp().await().indefinitely();
+        await(() -> consumer.catchUp());
 
         // A newer event for A arrives but the consumer has NOT caught up yet.
         post(a, 1.5);
 
         // Reproject only A from the log — B must be untouched, and no full rebuild happens.
-        consumer.reprojectEntity("AirQualityReading", "sensorId", a).await().indefinitely();
+        await(() -> consumer.reprojectEntity("AirQualityReading", "sensorId", a));
 
         assertEquals(1.5f, latest(a));
         assertEquals(2.0f, latest(b));
@@ -103,14 +116,14 @@ class ReadModelConsumerTest {
     void readModelOutageDoesNotBlockIngest() {
         String sensor = "sensor-" + UUID.randomUUID();
 
-        // Simulate a read-model outage.
-        client.query("drop table if exists reading_latest").execute().await().indefinitely();
+        // Simulate a read-model outage by wiping both read models and the cursor.
+        await(() -> store.reset());
 
         // Ingest still succeeds — the log is the source of truth and must always be writable.
         post(sensor, 7.7);
 
-        // The projection recovers and catches up.
-        consumer.catchUp().await().indefinitely();
+        // The projection recovers and catches up once it runs again.
+        await(() -> consumer.catchUp());
         assertEquals(7.7f, latest(sensor));
     }
 }
