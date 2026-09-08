@@ -2,6 +2,7 @@ package io.refrax.readmodel;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.vertx.VertxContextSupport;
+import io.refrax.tenant.TestTenantScope;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
@@ -29,15 +30,20 @@ class ReadModelConsumerTest {
     @Inject
     ReadModelStore store;
 
+    @Inject
+    TestTenantScope tenantScope;
+
     /**
      * Reactive Panache operations must run on a Vert.x context; a {@code @QuarkusTest} method runs
      * on the main thread, so bridge to one and block for the result. The {@link Uni} is built
-     * inside the supplier so its transaction binds to that context, not to the main thread.
+     * inside the supplier so its transaction binds to that context, not to the main thread. That
+     * context carries no HTTP request either, so {@link TestTenantScope} gives it its own tenant
+     * (the "public" schema the tests ingest into via the header-resolved REST calls below).
      * Ingest/read assertions go through the blocking REST API and stay on the main thread.
      */
-    private static <T> T await(Supplier<Uni<T>> action) {
+    private <T> T await(Supplier<Uni<T>> action) {
         try {
-            return VertxContextSupport.subscribeAndAwait(action::get);
+            return VertxContextSupport.subscribeAndAwait(() -> tenantScope.run("public", action));
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }

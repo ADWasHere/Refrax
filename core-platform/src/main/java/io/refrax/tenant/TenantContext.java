@@ -6,7 +6,7 @@ import jakarta.enterprise.context.RequestScoped;
 public class TenantContext {
     private String tenantId;
 
-    void setTenantId(String tenantId) {
+    public void setTenantId(String tenantId) {
         if (this.tenantId != null) {
             throw new IllegalStateException("Tenant context is immutable once set!");
         }
