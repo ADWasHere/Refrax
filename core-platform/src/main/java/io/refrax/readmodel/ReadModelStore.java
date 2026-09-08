@@ -1,12 +1,13 @@
 package io.refrax.readmodel;
 
-import io.quarkus.hibernate.reactive.panache.Panache;
 import io.refrax.ingestion.Events;
 import io.refrax.projection.ProjectionCursor;
+import io.refrax.tenant.TenantAwarePanache;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 import java.util.List;
 
@@ -25,14 +26,16 @@ import java.util.List;
  */
 @ApplicationScoped
 public class ReadModelStore {
+    @Inject
+    TenantAwarePanache panache;
 
     public Uni<Long> cursor(final String projection) {
-        return Panache.withTransaction(() -> ProjectionCursor.findByProjection(projection)
+        return panache.withTransaction(() -> ProjectionCursor.findByProjection(projection)
                 .map(cursor -> cursor == null ? 0L : cursor.getPosition()));
     }
 
     public Uni<Void> saveCursor(final String projection, final long position) {
-        return Panache.withTransaction(() -> ProjectionCursor.findByProjection(projection)
+        return panache.withTransaction(() -> ProjectionCursor.findByProjection(projection)
                 .flatMap(cursor -> {
                     if (cursor == null) {
                         cursor = new ProjectionCursor();
@@ -48,7 +51,7 @@ public class ReadModelStore {
             return Uni.createFrom().voidItem();
         }
 
-        return Panache.withTransaction(() -> Multi.createFrom().iterable(rows)
+        return panache.withTransaction(() -> Multi.createFrom().iterable(rows)
                 .onItem().transformToUni(row -> {
                     ReadingLatestId id = new ReadingLatestId(row.eventType(), row.entityId());
                     return ReadingLatest.<ReadingLatest>find("id = ?1", id).firstResult()
@@ -76,7 +79,7 @@ public class ReadModelStore {
             return Uni.createFrom().voidItem();
         }
 
-        return Panache.withTransaction(() -> Multi.createFrom().iterable(rows)
+        return panache.withTransaction(() -> Multi.createFrom().iterable(rows)
                 .onItem().transformToUni(row -> {
                     ReadingSeriesId id = new ReadingSeriesId(row.eventType(), row.seq(), row.observedAt());
                     return ReadingSeries.<ReadingSeries>find("id = ?1", id).firstResult()
@@ -97,14 +100,14 @@ public class ReadModelStore {
     }
 
     public Uni<List<JournalEntry>> readEventsAfter(long from, int limit) {
-        return Panache.withTransaction(() -> Events.<Events>find("seq > ?1 order by seq asc", from)
+        return panache.withTransaction(() -> Events.<Events>find("seq > ?1 order by seq asc", from)
                 .page(0, limit)
                 .list()
                 .map(rows -> rows.stream().map(JournalEntry::fromEntity).toList()));
     }
 
     public Uni<JournalEntry> findLatestEvent(String eventType, String identityField, String identityValue) {
-        return Panache.withTransaction(() -> Events.<Events>find("eventType = ?1 order by seq desc", eventType)
+        return panache.withTransaction(() -> Events.<Events>find("eventType = ?1 order by seq desc", eventType)
                 .list()
                 .map(rows -> {
                     for (Events row : rows) {
@@ -120,7 +123,7 @@ public class ReadModelStore {
 
     /** Wipes both read models and the cursor, so the next catch-up rebuilds from seq 0. */
     public Uni<Void> reset() {
-        return Panache.withTransaction(() -> ProjectionCursor.deleteAll()
+        return panache.withTransaction(() -> ProjectionCursor.deleteAll()
                 .flatMap(ignored -> ReadingLatest.deleteAll())
                 .flatMap(ignored -> ReadingSeries.deleteAll())
                 .replaceWithVoid());

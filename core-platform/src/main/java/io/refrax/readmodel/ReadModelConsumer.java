@@ -5,7 +5,11 @@ import io.refrax.gate.ExposableEntity;
 import io.refrax.gate.Gate;
 import io.refrax.schema.EventSchema;
 import io.refrax.schema.SchemaRegistry;
+import io.refrax.tenant.TenantRepository;
+import io.smallrye.common.vertx.VertxContext;
+import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
+import io.vertx.core.Context;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -41,11 +45,33 @@ public class ReadModelConsumer {
     @Inject
     Gate gate;
 
-    /** Periodic catch-up. Skips if a run is still in flight, so it never overlaps itself. */
+    @Inject
+    TenantRepository tenantRepository;
+
+    @Inject
+    TenantJobRunner tenantJobRunner;
+
+    /**
+     * Periodic catch-up. Skips if a run is still in flight, so it never overlaps itself.
+     * <br/><br/>
+     * Each tenant runs on its own brand-new Vert.x duplicated context ({@link #runIsolated})
+     */
     // TODO: Change polling to postgres notify. For now till v1.0.0 good enough. Then use polling as backup (Maybe every 10-30s)
     @Scheduled(every = "3s", concurrentExecution = Scheduled.ConcurrentExecution.SKIP)
     Uni<Void> tick() {
-        return catchUp().replaceWithVoid();
+        return tenantRepository.findAllTenantSchemas()
+                .flatMap(schemas -> Multi.createFrom().iterable(schemas)
+                        .onItem().transformToUni(this::runIsolated).concatenate()
+                        .collect().asList()
+                        .replaceWithVoid()
+                );
+    }
+
+    private Uni<Void> runIsolated(String schema) {
+        Context freshContext = VertxContext.createNewDuplicatedContext();
+        return Uni.createFrom().emitter(emitter ->
+                freshContext.runOnContext(ignored -> tenantJobRunner.runForTenant(schema)
+                        .subscribe().with(emitter::complete, emitter::fail)));
     }
 
     /** Processes every event after the cursor, advancing it as it goes. Returns the new cursor. */

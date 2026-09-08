@@ -1,5 +1,6 @@
-package io.refrax.readmodel;
+package io.refrax.readmodel.controller;
 
+import io.refrax.readmodel.ReadModelConsumer;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import jakarta.inject.Inject;
