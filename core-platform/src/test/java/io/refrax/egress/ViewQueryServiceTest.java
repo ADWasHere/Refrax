@@ -39,12 +39,12 @@ class ViewQueryServiceTest extends EgressTestSupport {
                 """.formatted(UUID.randomUUID(), sensorId);
 
         given().contentType("application/json")
-                .header("X-Tenant-ID", "test-tenant")
+                .header("X-Tenant-ID", "public")
                 .body(pollutedEvent)
                 .when().post("/v1/events").then().statusCode(202);
         await(() -> consumer.catchUp());
 
-        given().header("X-Tenant-ID", "test-tenant")
+        given().header("X-Tenant-ID", "public")
                 .queryParam("sensor", sensorId)
                 .when().get("/v1/views/air-quality-full/latest")
                 .then().statusCode(200)
@@ -69,7 +69,7 @@ class ViewQueryServiceTest extends EgressTestSupport {
         ingestAt(sensor, "2026-07-02T10:10:00Z", 3.0);
         await(() -> consumer.catchUp());
 
-        JsonPath series = given().header("X-Tenant-ID", "test-tenant")
+        JsonPath series = given().header("X-Tenant-ID", "public")
                 .queryParam("sensor", sensor)
                 .queryParam("from", "2026-07-02T10:04:00Z")
                 .queryParam("to", "2026-07-02T10:11:00Z")
@@ -86,7 +86,7 @@ class ViewQueryServiceTest extends EgressTestSupport {
         long seqA = ingest("sensor-" + UUID.randomUUID(), 11.1);
         long seqB = ingest("sensor-" + UUID.randomUUID(), 22.2);
 
-        JsonPath slice = given().header("X-Tenant-ID", "test-tenant")
+        JsonPath slice = given().header("X-Tenant-ID", "public")
                 .when().get("/v1/views/air-quality-full/stream?after=" + (seqA - 1))
                 .then().statusCode(200)
                 .body(not(containsString("deviceDbId")))
@@ -108,7 +108,7 @@ class ViewQueryServiceTest extends EgressTestSupport {
     void streamNarrowsToTheView() {
         long seq = ingest("sensor-" + UUID.randomUUID(), 44.4);
 
-        JsonPath slice = given().header("X-Tenant-ID", "test-tenant")
+        JsonPath slice = given().header("X-Tenant-ID", "public")
                 .when().get("/v1/views/air-quality-value-only/stream?after=" + (seq - 1))
                 .then().statusCode(200)
                 .extract().jsonPath();
@@ -121,7 +121,7 @@ class ViewQueryServiceTest extends EgressTestSupport {
     void cursorExcludesEventsAtOrBeforeIt() {
         long seqA = ingest("sensor-" + UUID.randomUUID(), 33.3);
 
-        JsonPath slice = given().header("X-Tenant-ID", "test-tenant")
+        JsonPath slice = given().header("X-Tenant-ID", "public")
                 .when().get("/v1/views/air-quality-full/stream?after=" + seqA)
                 .then().statusCode(200)
                 .extract().jsonPath();
@@ -131,7 +131,7 @@ class ViewQueryServiceTest extends EgressTestSupport {
 
     @Test
     void streamUnknownViewIsRejected() {
-        given().header("X-Tenant-ID", "test-tenant")
+        given().header("X-Tenant-ID", "public")
                 .when().get("/v1/views/does-not-exist/stream?after=0")
                 .then().statusCode(400);
     }

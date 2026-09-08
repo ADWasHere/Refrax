@@ -50,14 +50,14 @@ class ReadModelConsumerTest {
                                "deviceDbId": 999999, "userId": "u-1" } }
                 """.formatted(UUID.randomUUID(), sensorId, value);
         return given().contentType("application/json")
-                .header("X-Tenant-ID", "test-tenant")
+                .header("X-Tenant-ID", "public")
                 .body(event)
                 .when().post("/v1/events").then().statusCode(202)
                 .extract().jsonPath().getLong("seq");
     }
 
     private float latest(String sensorId) {
-        return given().header("X-Tenant-ID", "test-tenant")
+        return given().header("X-Tenant-ID", "public")
                 .queryParam("sensor", sensorId)
                 .when().get("/v1/views/air-quality-full/latest")
                 .then().statusCode(200)

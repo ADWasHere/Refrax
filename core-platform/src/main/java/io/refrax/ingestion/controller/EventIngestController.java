@@ -1,6 +1,9 @@
-package io.refrax.ingestion;
+package io.refrax.ingestion.controller;
 
-import io.quarkus.hibernate.reactive.panache.Panache;
+import io.refrax.ingestion.Events;
+import io.refrax.ingestion.IncomingEvent;
+import io.refrax.ingestion.IncomingEventValidator;
+import io.refrax.tenant.TenantAwarePanache;
 import io.refrax.tenant.TenantContext;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
@@ -18,13 +21,16 @@ import java.util.Objects;
 import java.util.UUID;
 
 @Path("v1/events")
-public class EventIngestResource {
+public class EventIngestController {
 
     @Inject
     IncomingEventValidator incomingEventValidator;
 
     @Inject
     TenantContext tenantContext;
+
+    @Inject
+    TenantAwarePanache panache;
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -45,7 +51,7 @@ public class EventIngestResource {
         String tenantId = tenantContext.getTenantId();
         String schemaVersion = "v1";
 
-        return Panache.withTransaction(() -> Events.findByTenantAndEventId(tenantId, eventId)
+        return panache.withTransaction(() -> Events.findByTenantAndEventId(tenantId, eventId)
                         .flatMap(existing -> {
                             if (existing != null) {
                                 return Uni.createFrom().item(Response.accepted().entity(Map.of("status", "duplicate")).build());

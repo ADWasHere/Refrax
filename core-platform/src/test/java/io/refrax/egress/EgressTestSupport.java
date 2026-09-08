@@ -41,7 +41,7 @@ public abstract class EgressTestSupport {
                 }
                 """.formatted(UUID.randomUUID(), sensorId, value);
         given().contentType("application/json")
-                .header("X-Tenant-ID", "test-tenant")
+                .header("X-Tenant-ID", "public")
                 .body(event)
                 .when().post("/v1/events").then().statusCode(202);
         await(() -> consumer.catchUp());
@@ -54,7 +54,7 @@ public abstract class EgressTestSupport {
                   "payload": { "sensorId": "%s", "metric": "PM2.5", "value": %s, "unit": "ug/m3" } }
                 """.formatted(UUID.randomUUID(), observedAt, sensorId, value);
         given().contentType("application/json")
-                .header("X-Tenant-ID", "test-tenant")
+                .header("X-Tenant-ID", "public")
                 .body(event)
                 .when().post("/v1/events").then().statusCode(202);
     }
@@ -72,7 +72,7 @@ public abstract class EgressTestSupport {
                 }
                 """.formatted(UUID.randomUUID(), sensorId, value);
         long seq = given().contentType("application/json")
-                .header("X-Tenant-ID", "test-tenant")
+                .header("X-Tenant-ID", "public")
                 .body(event)
                 .when().post("/v1/events").then().statusCode(202)
                 .extract().jsonPath().getLong("seq");
