@@ -9,13 +9,12 @@ import io.refrax.view.View;
 import io.refrax.view.ViewBinding;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.mutiny.sqlclient.Row;
-import io.vertx.mutiny.sqlclient.RowSet;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.core.Response;
 
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -30,48 +29,52 @@ public class ViewEntityMapper {
     /**
      * Maps a latest-query result set to a single JAX-RS response.
      *
-     * @param rows the database rows returned by the latest query
+     * @param rows the database rows returned by the latest query, each {@code {entity_id, exposed_json, observed_at}}
      * @param r the resolved view binding and projector
      * @return the HTTP response for the latest view result
      */
-    public Response mapLatest(RowSet<Row> rows, ViewResolver.Resolved r) {
-        if (rows.rowCount() == 0) {
+    public Response mapLatest(List<Object[]> rows, ViewResolver.Resolved r) {
+        if (rows.isEmpty()) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        if (rows.rowCount() > 1) {
+        if (rows.size() > 1) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(new JsonObject().put("error",
                             "Axis filter matched multiple identities on /latest; narrow the filter or use /series"))
                     .build();
         }
 
-        Row row = rows.iterator().next();
+        Object[] row = rows.get(0);
         ExposableEntity entity = reconstruct(r.binding(),
-                row.getString("entity_id"),
-                (JsonObject) row.getValue("exposed_json"),
-                row.getOffsetDateTime("observed_at"));
+                (String) row[0],
+                asJson(row[1]),
+                (OffsetDateTime) row[2]);
         return Response.ok(r.projector().project(entity)).build();
     }
 
     /**
      * Maps a time-series result set to a JSON array of events.
      *
-     * @param rows the database rows returned by the series query
+     * @param rows the database rows returned by the series query, each {@code {seq, entity_id, exposed_json, observed_at}}
      * @param r the resolved view binding and projector
      * @return the serialized series response payload
      */
-    public JsonArray sliceOf(Iterable<Row> rows, ViewResolver.Resolved r) {
+    public JsonArray sliceOf(List<Object[]> rows, ViewResolver.Resolved r) {
         JsonArray slice = new JsonArray();
-        for (Row row : rows) {
+        for (Object[] row : rows) {
             ExposableEntity entity = reconstruct(r.binding(),
-                    row.getString("entity_id"),
-                    (JsonObject) row.getValue("exposed_json"),
-                    row.getOffsetDateTime("observed_at"));
+                    (String) row[1],
+                    asJson(row[2]),
+                    (OffsetDateTime) row[3]);
             slice.add(new JsonObject()
-                    .put("seq", row.getLong("seq"))
+                    .put("seq", (Long) row[0])
                     .put("event", r.projector().project(entity)));
         }
         return slice;
+    }
+
+    private static JsonObject asJson(Object value) {
+        return value instanceof JsonObject json ? json : new JsonObject((String) value);
     }
 
     /**

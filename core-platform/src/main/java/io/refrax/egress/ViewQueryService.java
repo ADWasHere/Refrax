@@ -1,12 +1,14 @@
 package io.refrax.egress;
 
+import io.quarkus.hibernate.reactive.panache.Panache;
+import io.refrax.tenant.TenantAwarePanache;
 import io.smallrye.mutiny.Uni;
-import io.vertx.mutiny.pgclient.PgPool;
-import io.vertx.mutiny.sqlclient.Tuple;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
+
+import java.util.List;
 
 /**
  * Orchestrates view reads against the read model.
@@ -14,6 +16,11 @@ import jakarta.ws.rs.core.Response;
  * <p>The service is intentionally slim: it resolves the requested view, builds the SQL statement from
  * the schema-aware filter parser, executes the query, and delegates the materialization step to the
  * mapper component.
+ *
+ * <p>Queries run as Hibernate Reactive native queries (not the raw {@code PgPool}), because
+ * {@link TenantAwarePanache} pins the tenant's schema with {@code SET LOCAL search_path} on the
+ * connection borrowed through the Hibernate Reactive session — a query on a separately-borrowed raw
+ * pool connection would not see that pin at all.
  */
 @ApplicationScoped
 public class ViewQueryService {
@@ -24,9 +31,6 @@ public class ViewQueryService {
     private static final int SLICE_LIMIT = 1000;
 
     @Inject
-    PgPool client;
-
-    @Inject
     ViewResolver viewResolver;
 
     @Inject
@@ -34,6 +38,9 @@ public class ViewQueryService {
 
     @Inject
     ViewEntityMapper viewEntityMapper;
+
+    @Inject
+    TenantAwarePanache panache;
 
     /**
      * Fetches the current latest state for a view and optional axis filters.
@@ -50,9 +57,8 @@ public class ViewQueryService {
                 .bind(r.binding().eventType());
         axisFilterParser.appendAxisFilters(r.binding(), query, java.util.Set.of(FORMAT_PARAM), q);
 
-        return client.preparedQuery(q.sql())
-                .execute(Tuple.from(q.params()))
-                .map(rows -> viewEntityMapper.mapLatest(rows, r));
+        return panache.withTransaction(() -> executeQuery(q)
+                .map(rows -> viewEntityMapper.mapLatest(rows, r)));
     }
 
     /**
@@ -66,11 +72,14 @@ public class ViewQueryService {
     public Uni<Response> stream(String viewName, String requestedFormat, long after) {
         ViewResolver.Resolved r = viewResolver.resolve(viewName, requestedFormat);
 
-        return client.preparedQuery(
-                        "select seq, entity_id, exposed_json, observed_at from reading_series "
-                                + "where event_type = $1 and seq > $2 order by seq asc limit " + SLICE_LIMIT)
-                .execute(Tuple.of(r.binding().eventType(), after))
-                .map(rows -> Response.ok(viewEntityMapper.sliceOf(rows, r)).build());
+        SqlBuilder q = new SqlBuilder(
+                "select seq, entity_id, exposed_json, observed_at from reading_series where event_type = ")
+                .bind(r.binding().eventType())
+                .sql(" and seq > ").bind(after)
+                .sql(" order by seq asc limit " + SLICE_LIMIT);
+
+        return panache.withTransaction(() -> executeQuery(q)
+                .map(rows -> Response.ok(viewEntityMapper.sliceOf(rows, r)).build()));
     }
 
     /**
@@ -90,8 +99,19 @@ public class ViewQueryService {
         axisFilterParser.appendTimeFilters(query, q);
         q.sql(" order by observed_at asc, seq asc limit ").bind(SLICE_LIMIT);
 
-        return client.preparedQuery(q.sql())
-                .execute(Tuple.from(q.params()))
-                .map(rows -> Response.ok(viewEntityMapper.sliceOf(rows, r)).build());
+        return panache.withTransaction(() -> executeQuery(q)
+                .map(rows -> Response.ok(viewEntityMapper.sliceOf(rows, r)).build()));
+    }
+
+    /** Executes a dynamically-built SQL statement as a Hibernate Reactive native query. */
+    private Uni<List<Object[]>> executeQuery(SqlBuilder q) {
+        return Panache.getSession().flatMap(session -> {
+            var query = session.createNativeQuery(q.sql(), Object[].class);
+            List<Object> params = q.params();
+            for (int i = 0; i < params.size(); i++) {
+                query = query.setParameter(i + 1, params.get(i));
+            }
+            return query.getResultList();
+        });
     }
 }
