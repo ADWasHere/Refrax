@@ -26,10 +26,6 @@ public class TenantAwarePanache {
         return Panache.withTransaction(() -> pinSchema().flatMap(v -> work.get()));
     }
 
-    public <T> Uni<T> withSession(Supplier<Uni<T>> work) {
-        return Panache.withSession(() -> pinSchema().flatMap(v -> work.get()));
-    }
-
     private Uni<Void> pinSchema() {
         String schema = tenantContext.getTenantId();
         requireSafeSchema(schema);

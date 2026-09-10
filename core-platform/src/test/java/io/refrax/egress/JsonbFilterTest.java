@@ -31,7 +31,7 @@ class JsonbFilterTest {
 
         JsonbFilter.appendJsonbFilter(q, "value", NUMBER_FIELD, "gte", "12.5");
 
-        assertTrue(q.sql().contains("::numeric >= $3::numeric"));
+        assertTrue(q.sql().contains("::numeric >= ?3::numeric"));
         assertEquals(List.of("value", "value", new BigDecimal("12.5")), q.params());
     }
 
@@ -41,7 +41,7 @@ class JsonbFilterTest {
 
         JsonbFilter.appendJsonbFilter(q, "value", NUMBER_FIELD, "gte", "20");
 
-        assertTrue(q.sql().contains("::numeric >= $3::numeric"));
+        assertTrue(q.sql().contains("::numeric >= ?3::numeric"));
         assertFalse(q.sql().contains("::text >=") || q.sql().contains("->> 'value' >="));
         assertEquals(List.of("value", "value", new BigDecimal("20")), q.params());
         assertEquals(BigDecimal.class, q.params().get(2).getClass());
@@ -67,7 +67,7 @@ class JsonbFilterTest {
 
         JsonbFilter.appendJsonbFilter(q, "observedAt", TIMESTAMP_FIELD, "lt", "2026-07-02T10:00:00Z");
 
-        assertTrue(q.sql().contains("::timestamptz < $3::timestamptz"));
+        assertTrue(q.sql().contains("::timestamptz < ?3::timestamptz"));
         assertEquals(List.of("observedAt", "observedAt", expected), q.params());
 
         IllegalArgumentException badTs = assertThrows(IllegalArgumentException.class,
@@ -82,7 +82,7 @@ class JsonbFilterTest {
 
         JsonbFilter.appendJsonbFilter(q, "active", BOOLEAN_FIELD, "eq", "true");
 
-        assertTrue(q.sql().contains("::boolean = $2::boolean"));
+        assertTrue(q.sql().contains("::boolean = ?2::boolean"));
         assertEquals(List.of("active", true), q.params());
 
         IllegalArgumentException invalidOp = assertThrows(IllegalArgumentException.class,
@@ -97,7 +97,7 @@ class JsonbFilterTest {
 
         JsonbFilter.appendJsonbFilter(q, "status", STRING_FIELD, "eq", "ok");
 
-        assertTrue(q.sql().contains("exposed_json ->> $1 = $2"));
+        assertTrue(q.sql().contains("exposed_json ->> ?1 = ?2"));
         assertEquals(List.of("status", "ok"), q.params());
 
         IllegalArgumentException invalidOp = assertThrows(IllegalArgumentException.class,

@@ -4,8 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A parameterised SQL statement under construction.
- * Future: Switch to Hibernate completely
+ * A parameterised native-SQL statement under construction, executed via the Hibernate Reactive
+ * session (see {@link ViewQueryService}) so it runs on the connection {@code TenantAwarePanache}
+ * pinned to the tenant's schema.
  */
 final class SqlBuilder {
 
@@ -21,10 +22,10 @@ final class SqlBuilder {
         return this;
     }
 
-    /** Binds a value and appends its positional placeholder ({@code $n}). */
+    /** Binds a value and appends its positional placeholder ({@code ?n}, Hibernate's ordinal style). */
     SqlBuilder bind(Object value) {
         params.add(value);
-        sql.append('$').append(params.size());
+        sql.append('?').append(params.size());
         return this;
     }
 
