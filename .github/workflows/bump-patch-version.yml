@@ -30,6 +30,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Strip -SNAPSHOT (x.y.z-SNAPSHOT -> x.y.z)
+        working-directory: core-platform
         run: |
           CURRENT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
           RELEASE_VERSION=${CURRENT_VERSION%-SNAPSHOT}
@@ -43,6 +44,7 @@ jobs:
           git tag -a "v$RELEASE_VERSION" -m "Release $RELEASE_VERSION"
 
       - name: Increment Patch Version (x.y.z -> x.y.z+1-SNAPSHOT)
+        working-directory: core-platform
         run: |
           mvn build-helper:parse-version versions:set \
             -DnewVersion=\${parsedVersion.majorVersion}.\${parsedVersion.minorVersion}.\${parsedVersion.nextIncrementalVersion}-SNAPSHOT \
