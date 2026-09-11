@@ -1,0 +1,57 @@
+name: Increment Maven Version
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Git Config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Strip -SNAPSHOT (x.y.z-SNAPSHOT -> x.y.z)
+        run: |
+          CURRENT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          RELEASE_VERSION=${CURRENT_VERSION%-SNAPSHOT}
+          
+          echo "Setting Release Version: $RELEASE_VERSION"
+          mvn versions:set -DnewVersion=$RELEASE_VERSION -DgenerateBackupPoms=false
+          
+          # Git Commit & Tag for Release
+          git add pom.xml
+          git commit -m "chore(release): prepare release $RELEASE_VERSION"
+          git tag -a "v$RELEASE_VERSION" -m "Release $RELEASE_VERSION"
+
+      - name: Increment Patch Version (x.y.z -> x.y.z+1-SNAPSHOT)
+        run: |
+          mvn build-helper:parse-version versions:set \
+            -DnewVersion=\${parsedVersion.majorVersion}.\${parsedVersion.minorVersion}.\${parsedVersion.nextIncrementalVersion}-SNAPSHOT \
+            -DgenerateBackupPoms=false
+
+          NEXT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "Setting Next SNAPSHOT Version: $NEXT_VERSION"
+
+          # Git Commit & Push
+          git add pom.xml
+          git commit -m "chore: prepare for next development iteration $NEXT_VERSION"
+          git push origin HEAD --tags
