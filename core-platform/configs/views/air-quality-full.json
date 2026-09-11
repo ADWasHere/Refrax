@@ -5,6 +5,7 @@
   "queryable": {
     "sensor": { "field": "sensorId", "match": "exact" },
     "time":   { "field": "validTime", "match": "range" },
-    "metric": { "field": "metric", "match": "exact" }
+    "metric": { "field": "metric", "match": "exact" },
+    "value":  { "field": "value", "match": "exact" }
   }
 }

@@ -62,7 +62,10 @@ class AxisFilterParserTest {
         assertTrue(sql.contains("entity_id"));
         assertTrue(sql.contains("::numeric >="));
         assertTrue(sql.contains("::timestamptz <"));
-        assertEquals(List.of("value", "value", new java.math.BigDecimal("10.5"), "observedAt", "observedAt", OffsetDateTime.parse("2026-07-02T10:00:00Z"), "urn:refrax:AirQualityReading:sensor-42"), q.params());
+        assertEquals(List.of(
+                "value", "^-?[0-9]+(\\.[0-9]+)?$", "value", new java.math.BigDecimal("10.5"),
+                "observedAt", "^[0-9]{4}-[0-9]{2}-[0-9]{2}T", "observedAt", OffsetDateTime.parse("2026-07-02T10:00:00Z"),
+                "urn:refrax:AirQualityReading:sensor-42"), q.params());
     }
 
     @Test

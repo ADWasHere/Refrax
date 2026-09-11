@@ -1,11 +1,88 @@
 # Refrax
 
 One event-sourced source of truth, refracted into multiple standard-conformant
-projections (NGSI-LD, OGC SensorThings, native) that stay consistent by construction.
+projections (NGSI-LD, native) that stay consistent by construction.
 
-Refrax is not another smart-city platform and not a FIWARE replacement. It is a focused
-implementation of a single idea: standards compliance as a structurally guaranteed
-projection, instead of a hand-maintained data model.
+Refrax is not another IoT platform and not a FIWARE replacement. It is a focused implementation
+of a single idea: standards compliance as a structurally guaranteed projection, instead of a
+hand-maintained data model — for event-sourced IoT and telemetry data generally, not tied to one
+industry. The bundled example (an air-quality sensor schema and its views) happens to be a
+smart-city use case because that's the domain the author knows best; nothing in the gate, views,
+or projectors assumes it, and using it for a different domain is a matter of writing a different
+schema, not changing the core.
+
+For what is planned but not built yet, see [ROADMAP.md](ROADMAP.md).
+
+## Quickstart
+
+Requires Docker, and for running from source, a JDK 25 (the Maven wrapper is included, no
+local Maven install needed). Every setting below already has a working default; copy
+[core-platform/.env.example](core-platform/.env.example) to `core-platform/.env` only if you
+want to change one — Docker Compose reads it automatically.
+
+### Run with Docker Compose
+
+```bash
+cd core-platform
+docker compose up
+```
+
+Refrax listens on `http://localhost:8787` (override with `HTTP_PORT`).
+
+### Run from source (Maven)
+
+Starts only the database via Compose, then runs Refrax in dev mode with live reload:
+
+```bash
+cd core-platform
+docker compose up -d db
+./mvnw quarkus:dev
+```
+
+### Try it
+
+Refrax is multi-tenant by default, but boots with one tenant already usable: the database's
+default `public` schema counts as a tenant like any other, so you can ingest without
+provisioning anything first. One event schema (`AirQualityReading`) and two views of it
+(`air-quality-full`, `air-quality-value-only`) are bundled — see
+[core-platform/configs/schemas](core-platform/configs/schemas) and
+[core-platform/configs/views](core-platform/configs/views).
+
+Send an event:
+
+```bash
+curl -X POST http://localhost:8787/v1/events \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: public" \
+  -d '{
+    "eventType": "AirQualityReading",
+    "eventId": "11111111-0000-0000-0000-000000000001",
+    "observedAt": "2026-09-11T12:00:00Z",
+    "payload": {"sensorId": "sensor-42", "metric": "PM2.5", "value": "12.4", "unit": "ug/m3"}
+  }'
+```
+
+The read models catch up within a few seconds; then read it back through a view:
+
+```bash
+curl -H "X-Tenant-ID: public" "http://localhost:8787/v1/views/air-quality-full/series"
+```
+
+To isolate a new tenant instead of using `public`, provision one first. Provisioning is
+restricted to identities listed in `REFRAX_TENANT_ADMIN_IDS` (`admin` by default) — this is
+not authentication, just a minimal allowlist on top of whatever the gateway or token issuer
+already vouches for:
+
+```bash
+curl -X POST http://localhost:8787/v1/tenants \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: admin" \
+  -d '{"schema":"demo"}'
+```
+
+For the full API reference — every endpoint, dynamic JSONB filtering, and how to get output in
+a format other than `native` — see [docs/GUIDE.md](docs/GUIDE.md). For an unfamiliar term, see
+[docs/GLOSSARY.md](docs/GLOSSARY.md).
 
 ## The guarantee
 
@@ -15,11 +92,12 @@ artifact such as a database primary key, a partition id, or an ingestion offset 
 leaking into the domain model you expose. Refrax removes this class of error:
 
 > No field without a declared domain meaning and an explicit vocabulary binding can appear
-> in an exposed standard representation. The type system enforces this, not discipline or
-> code review.
+> in an exposed standard representation. A single capability gate enforces this, not
+> discipline or code review.
 
-A projector cannot emit an internal field, because the value it is handed does not contain
-one. Leak prevention is a property of the types, checked at compile time.
+A projector cannot emit an internal field, because the `ExposableEntity` it is handed is
+built by copying only what the schema marked exposable, deny-by-default — the gate is the
+one chokepoint, not every call site having to get it right.
 
 ## Why event-sourced
 
@@ -31,9 +109,9 @@ the guarantees possible.
   information. A system that stores only the current state and later wants history has to add
   change-capture, and at that point it has reimplemented event sourcing with weaker
   guarantees.
-- One canonical log derives arbitrarily many representations, such as NGSI-LD today, OGC
-  SensorThings, and some future standard, and they all stay consistent with no data
-  migration. Adding a standard means adding a projector, not migrating data.
+- One canonical log derives arbitrarily many representations, such as NGSI-LD today and some
+  future standard, and they all stay consistent with no data migration. Adding a standard
+  means adding a projector, not migrating data.
 - Because the log is canonical and not a side effect of a mutable store, the current-state
   read model and the full history stay consistent with each other, and any projection can be
   rebuilt by replay.
@@ -55,18 +133,24 @@ matter. It is the wrong tool when they do not (see When not to use Refrax).
   only from declared identity components, never from a storage key. No domain identity means
   no projection.
 - Views let one event type expose different subsets to different consumers, for example a
-  public open-data view without location and a planning view with it. Each view is a declared,
-  gated subset, and a view can only narrow what the schema marks exposable, never widen it.
-  This makes purpose limitation and data minimisation structural instead of a filter rule that
-  someone has to apply correctly.
-- Projectors (NGSI-LD, OGC SensorThings, native) consume an `ExposableEntity` and decide only
+  public monitoring view without precise location and an operations view with it. Each view is
+  a declared, gated subset, and a view can only narrow what the schema marks exposable, never
+  widen it. This makes purpose limitation and data minimisation structural instead of a filter
+  rule that someone has to apply correctly.
+- Fields marked personal data are excluded from every projection and read model outright, not
+  merely narrowed out of a specific view. Erasing them from the log itself, rather than just
+  keeping them out of projections, is on the roadmap and not built yet.
+- Every tenant gets its own Postgres schema, provisioned and migrated independently. Tenant
+  resolution (an `X-Tenant-ID` header or an OIDC claim) happens once per request and pins every
+  transaction to that schema, so ingestion, replay, scheduled catch-up jobs, views, and reads
+  are all tenant-isolated, not just the write path.
+- Projectors (native and NGSI-LD today) consume an `ExposableEntity` and decide only
   shape, never eligibility. Views and projectors are orthogonal, so any view renders in any
   standard, and adding a standard is one projector that works for every view rather than a
   per-view rewrite.
-- Read models (TimescaleDB for time-series, PostGIS for geo) and the standard `@context`
-  artifacts are derived, not hand-written. The same replay mechanism that builds a projection
-  also rebuilds it after a schema change. Provenance and lineage of every value come from the
-  log for free.
+- Read models (TimescaleDB for time-series today) and the standard `@context` artifacts are
+  derived, not hand-written. The same replay mechanism that builds a projection also rebuilds
+  it after a schema change. Provenance and lineage of every value come from the log for free.
 
 See `docs/architecture.puml` for the system overview and `docs/compiler.puml` for the projection
 pipeline.
@@ -81,16 +165,16 @@ pipeline.
 
 ## What this is and isn't
 
-- Is: a reference implementation of structurally guaranteed standards projection, usable for
-  evaluation, research, and as a building block.
+- Is: a reference implementation of structurally guaranteed standards projection, usable as a
+  building block in a larger IoT or data-platform stack.
 - Is not: a complete platform. By its own design boundary, Refrax ships no dashboards and no
-  connectors. Visualization and ingestion are decentralized and left to consumers. Refrax
+  connectors and no auth. Visualization and ingestion are decentralized and left to consumers. Refrax
   provides data integrity, multi-tenancy, the projection guarantee, and the standard egress
   APIs, and it stops there on purpose, so that operators and vendors build their connectors,
   dashboards, and services on top of it.
-- Relationship to FIWARE: complementary rather than adversarial. Refrax speaks NGSI-LD and OGC
-  SensorThings on egress and is built to interoperate. The contribution is the approach to
-  compliance, which is independent of any single broker and can be adopted by them.
+- Relationship to FIWARE: complementary rather than adversarial. Refrax speaks NGSI-LD on
+  egress and is built to interoperate. The contribution is the approach to compliance, which is
+  independent of any single broker and can be adopted by them.
 
 ## When not to use Refrax
 
@@ -124,41 +208,17 @@ truth for a given datum, and data crosses the boundary in one direction only:
 
 Adoption is therefore additive. You place it next to what you run, not in place of it.
 
-## Compliance and data protection
-
-The properties Refrax guarantees structurally, namely provenance, integrity,
-standards-conformant interoperable egress, and portability without lock-in, are the ones EU
-regulation is moving from optional to mandatory. The Data Act sets machine-readable access,
-interoperability, and portability obligations, and the AI Act requires proof of the provenance
-and integrity of input data. Refrax does not make an organisation compliant, since compliance
-is organisational, but it provides the technical substrate that makes the relevant controls
-structural instead of bolted on.
-
-The immutable log and the right to erasure are reconciled by crypto-shredding. Fields declared
-as personal data are encrypted at rest with a per-subject key held in a separate, mutable key
-store. Erasure destroys the key, so the event stays immutable while its personal content
-becomes permanently unreadable, including in backups and derived read models. Personal-data
-classification is part of the schema and is enforced, so a field declared personal cannot be
-stored or projected in clear.
-
-## For evaluators
-
-If you run or plan an urban data platform, or any system where externally shared data must be
-trusted, traceable, and standards-conformant, the practical question is usually this: can I
-trust that what we expose actually reflects our domain, and not accidents of our database?
-Refrax answers that with a guarantee you can point at, instead of a process you have to police.
-It is standards-conformant by design (NGSI-LD and OGC SensorThings), so it fits interoperability
-and procurement requirements, including the DIN SPEC 91357 reference architecture for open urban
-platforms, without locking you into a proprietary model. Smart-city telemetry is the first
-target, and the pattern extends to other domains with hard provenance and audit requirements. It
-is early-stage. Evaluation and feedback are welcome, and there is nothing to buy.
-
 ## Status
 
-Early, independent, and actively developed in the author's own time. It exists because current
-enterprise urban-data stacks make the core heavier and less trustworthy than it needs to be, and
+Early, independent, and actively developed in the author's own time. As of `0.2.0`: event
+sourcing, the capability gate, views, the NGSI-LD projector, TimescaleDB read models, and
+schema-per-tenant multi-tenancy — ingestion, replay, scheduled jobs, views, and reads are all
+tenant-isolated — are implemented and tested. What is not yet built, most notably the OGC
+SensorThings projector, a PostGIS-backed geo read model, and full crypto-shredding for GDPR
+erasure, is tracked in [ROADMAP.md](ROADMAP.md). It exists because current enterprise
+IoT/telemetry data stacks make the core heavier and less trustworthy than it needs to be, and
 because that core can be done substantially simpler and safer. Interfaces and internals will
-change.
+change before `1.0.0`.
 
 ## License
 
@@ -168,6 +228,6 @@ file for the full text. This summary is not legal advice.
 
 ## Contributing and upstream
 
-The most valuable contribution is to the idea. If you maintain an NGSI-LD broker or work within
-ETSI ISG CIM or the FIWARE ecosystem, the structural-compliance approach here is meant to be
-taken and improved on. Issues and design proposals are welcome.
+The most valuable contribution is to the idea. If you maintain an NGSI-LD broker or work in the
+FIWARE ecosystem, feedback on the structural-compliance approach is especially useful. Issues
+and design proposals are welcome.

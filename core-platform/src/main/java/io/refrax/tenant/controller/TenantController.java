@@ -1,5 +1,7 @@
 package io.refrax.tenant.controller;
 
+import io.refrax.tenant.TenantAdminAllowlist;
+import io.refrax.tenant.TenantContext;
 import io.refrax.tenant.TenantProvisioningService;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -17,9 +19,21 @@ public class TenantController {
     @Inject
     TenantProvisioningService provisioningService;
 
+    @Inject
+    TenantContext tenantContext;
+
+    @Inject
+    TenantAdminAllowlist adminAllowlist;
+
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     public Response createTenant(@Valid CreateTenantRequest req) {
+        if (!adminAllowlist.isAdmin(tenantContext.getTenantId())) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("Not allowed to provision tenants.")
+                    .build();
+        }
+
         try {
             provisioningService.provisionTenant(req.schema());
             return Response.status(Response.Status.CREATED).build();
