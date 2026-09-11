@@ -21,6 +21,9 @@ public class TenantProvisioningService {
     @Inject
     DataSource defaultDataSource;
 
+    @Inject
+    Flyway flyway;
+
     public void provisionTenant(String tenantSchemaName) throws Exception {
         try (Connection conn = defaultDataSource.getConnection()) {
             DatabaseMetaData meta = conn.getMetaData();
@@ -35,12 +38,11 @@ public class TenantProvisioningService {
             }
         }
 
-        Flyway flyway = Flyway.configure()
-                .dataSource(defaultDataSource)
+        Flyway tenantFlyway = Flyway.configure(flyway.getConfiguration().getClassLoader())
+                .configuration(flyway.getConfiguration())
                 .schemas(tenantSchemaName)
-                .locations("db/migration")
                 .load();
 
-        flyway.migrate();
+        tenantFlyway.migrate();
     }
 }

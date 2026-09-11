@@ -16,8 +16,8 @@ import java.util.UUID;
         name = "events",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "uq_events_tenant_event",
-                        columnNames = {"tenant_id", "event_id"}
+                        name = "uq_events_event_id",
+                        columnNames = {"event_id"}
                 )
         }
 )
@@ -27,9 +27,6 @@ public class Events extends PanacheEntityBase {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "seq", nullable = false, updatable = false)
     public Long seq;
-
-    @Column(name = "tenant_id", nullable = false, columnDefinition = "text")
-    public String tenantId;
 
     @Column(name = "event_type", nullable = false, columnDefinition = "text")
     public String eventType;
@@ -55,20 +52,12 @@ public class Events extends PanacheEntityBase {
     public Events() {
     }
 
-    public static Uni<Events> findByTenantAndEventId(String tenantId, UUID eventId) {
-        return find("tenantId = ?1 and eventId = ?2", tenantId, eventId).firstResult();
+    public static Uni<Events> findByEventId(UUID eventId) {
+        return find("eventId = ?1", eventId).firstResult();
     }
 
     public Long getSeq() {
         return seq;
-    }
-
-    public String getTenantId() {
-        return tenantId;
-    }
-
-    public void setTenantId(String tenantId) {
-        this.tenantId = tenantId;
     }
 
     public String getEventType() {

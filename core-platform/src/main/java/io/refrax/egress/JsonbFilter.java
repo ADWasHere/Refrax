@@ -9,9 +9,19 @@ import java.time.OffsetDateTime;
 /**
  * JSONB filter helper that builds WHERE fragments and binds typed parameters.
  * Supports operators: eq, gt, gte, lt, lte.
+ *
+ * <p>Every cast keeps a space before its {@code ::type}, e.g. {@code ?4 ::numeric} rather than
+ * {@code ?4::numeric}: Hibernate's ordinal-parameter parser misreads a placeholder immediately
+ * followed by a cast and fails with "Ordinal parameter label was not an integer".
  */
 final class JsonbFilter {
     private JsonbFilter() {}
+
+    // Bound as parameters rather than spliced into the SQL text, so a literal '?' in a regex
+    // (e.g. the "-?" in NUMERIC_PATTERN) is never mistaken for one of Hibernate's own ordinal
+    // placeholders.
+    private static final String NUMERIC_PATTERN = "^-?[0-9]+(\\.[0-9]+)?$";
+    private static final String TIMESTAMP_PATTERN = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T";
 
     static void appendJsonbFilter(SqlBuilder q, String fieldName, FieldDeclaration fd, String op, String value) {
         FieldType ft = fd.type();
@@ -29,8 +39,9 @@ final class JsonbFilter {
                     throw new IllegalArgumentException("Parameter for numeric comparison is not a number: " + value);
                 }
                 q.sql(" and (exposed_json ->> ").bind(fieldName)
-                        .sql(") ~ '^-?[0-9]+(\\.[0-9]+)?$' and (exposed_json ->> ").bind(fieldName)
-                        .sql(")::numeric ").sql(sqlOp).sql(" ").bind(num).sql("::numeric");
+                        .sql(") ~ ").bind(NUMERIC_PATTERN)
+                        .sql(" and (exposed_json ->> ").bind(fieldName)
+                        .sql(")::numeric ").sql(sqlOp).sql(" ").bind(num).sql(" ::numeric");
                 break;
             }
 
@@ -45,8 +56,9 @@ final class JsonbFilter {
                     throw new IllegalArgumentException("Parameter for timestamp comparison is not a valid ISO-8601 timestamp: " + value);
                 }
                 q.sql(" and (exposed_json ->> ").bind(fieldName)
-                        .sql(") ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' and (exposed_json ->> ").bind(fieldName)
-                        .sql(")::timestamptz ").sql(sqlOp).sql(" ").bind(odt).sql("::timestamptz");
+                        .sql(") ~ ").bind(TIMESTAMP_PATTERN)
+                        .sql(" and (exposed_json ->> ").bind(fieldName)
+                        .sql(")::timestamptz ").sql(sqlOp).sql(" ").bind(odt).sql(" ::timestamptz");
                 break;
             }
 
@@ -56,7 +68,7 @@ final class JsonbFilter {
                 }
                 Boolean b = Boolean.parseBoolean(value);
                 q.sql(" and (exposed_json ->> ").bind(fieldName)
-                        .sql(")::boolean = ").bind(b).sql("::boolean");
+                        .sql(")::boolean = ").bind(b).sql(" ::boolean");
                 break;
             }
 

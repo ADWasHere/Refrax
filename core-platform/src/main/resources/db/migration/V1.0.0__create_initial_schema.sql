@@ -2,14 +2,13 @@ create extension if not exists timescaledb;
 
 create table if not exists events (
     seq            bigint generated always as identity primary key,
-    tenant_id      text        not null,
     event_type     text        not null,
     payload        jsonb       not null,
     valid_time     timestamptz,
     event_id       uuid        not null,
     schema_version text        not null,
     recorded_at    timestamptz not null default now(),
-    constraint uq_events_tenant_event unique (tenant_id, event_id)
+    constraint uq_events_event_id unique (event_id)
 );
 
 create table if not exists projection_cursor (

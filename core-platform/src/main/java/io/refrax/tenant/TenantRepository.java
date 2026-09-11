@@ -14,7 +14,6 @@ public class TenantRepository {
             SELECT DISTINCT table_schema
             FROM information_schema.tables
             WHERE table_name = 'projection_cursor'
-              AND table_schema != 'public'
            \s""";
 
         return Panache.withSession(() -> Panache.getSession()

@@ -4,7 +4,6 @@ import io.refrax.ingestion.Events;
 import io.refrax.ingestion.IncomingEvent;
 import io.refrax.ingestion.IncomingEventValidator;
 import io.refrax.tenant.TenantAwarePanache;
-import io.refrax.tenant.TenantContext;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import jakarta.inject.Inject;
@@ -27,9 +26,6 @@ public class EventIngestController {
     IncomingEventValidator incomingEventValidator;
 
     @Inject
-    TenantContext tenantContext;
-
-    @Inject
     TenantAwarePanache panache;
 
     @POST
@@ -48,17 +44,15 @@ public class EventIngestController {
         OffsetDateTime validTime = OffsetDateTime.ofInstant(incomingEvent.occurredAt(), java.time.ZoneOffset.UTC);
         String eventIdStr = event.getString("eventId");
         UUID eventId = (eventIdStr != null) ? UUID.fromString(eventIdStr) : UUID.randomUUID();
-        String tenantId = tenantContext.getTenantId();
         String schemaVersion = "v1";
 
-        return panache.withTransaction(() -> Events.findByTenantAndEventId(tenantId, eventId)
+        return panache.withTransaction(() -> Events.findByEventId(eventId)
                         .flatMap(existing -> {
                             if (existing != null) {
                                 return Uni.createFrom().item(Response.accepted().entity(Map.of("status", "duplicate")).build());
                             }
 
                             Events entity = new Events();
-                            entity.tenantId = tenantId;
                             entity.eventType = eventType;
                             entity.payload = payload.encode();
                             entity.validTime = validTime;

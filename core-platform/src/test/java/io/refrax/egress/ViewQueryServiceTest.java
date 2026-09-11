@@ -82,6 +82,25 @@ class ViewQueryServiceTest extends EgressTestSupport {
     }
 
     @Test
+    void numericAxisFilterMatchesByComparison() {
+        String sensor = "sensor-" + UUID.randomUUID();
+        ingestAt(sensor, "2026-07-02T10:00:00Z", 5.0);
+        ingestAt(sensor, "2026-07-02T10:05:00Z", 15.0);
+        ingestAt(sensor, "2026-07-02T10:10:00Z", 25.0);
+        await(() -> consumer.catchUp());
+
+        JsonPath series = given().header("X-Tenant-ID", "public")
+                .queryParam("sensor", sensor)
+                .queryParam("value.gte", "15")
+                .when().get("/v1/views/air-quality-full/series")
+                .then().statusCode(200)
+                .extract().jsonPath();
+
+        List<Float> values = series.getList("event.value", Float.class);
+        assertEquals(List.of(15.0f, 25.0f), values);
+    }
+
+    @Test
     void streamReturnsOrderedGatedSliceAfterCursor() {
         long seqA = ingest("sensor-" + UUID.randomUUID(), 11.1);
         long seqB = ingest("sensor-" + UUID.randomUUID(), 22.2);
