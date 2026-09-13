@@ -69,11 +69,11 @@ jobs:
           BUMP_TYPE="${{ inputs.bump_type }}"
           
           if [ "$BUMP_TYPE" = "major" ]; then
-            NEW_VER_EXPR='\${parsedVersion.nextMajorVersion}.0.0-SNAPSHOT'
+            NEW_VER_EXPR='${parsedVersion.nextMajorVersion}.0.0-SNAPSHOT'
           elif [ "$BUMP_TYPE" = "patch" ]; then
-            NEW_VER_EXPR='\${parsedVersion.majorVersion}.\${parsedVersion.minorVersion}.\${parsedVersion.nextIncrementalVersion}-SNAPSHOT'
+            NEW_VER_EXPR='${parsedVersion.majorVersion}.${parsedVersion.minorVersion}.${parsedVersion.nextIncrementalVersion}-SNAPSHOT'
           else
-            NEW_VER_EXPR='\${parsedVersion.majorVersion}.\${parsedVersion.nextMinorVersion}.0-SNAPSHOT'
+            NEW_VER_EXPR='${parsedVersion.majorVersion}.${parsedVersion.nextMinorVersion}.0-SNAPSHOT'
           fi
 
           mvn build-helper:parse-version versions:set \
