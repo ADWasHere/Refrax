@@ -5,6 +5,7 @@ import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.logging.Logger;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -21,6 +22,8 @@ import java.util.Optional;
 @ApplicationScoped
 public class ViewRegistry {
 
+    private static final Logger LOG = Logger.getLogger(ViewRegistry.class);
+
     @ConfigProperty(name = "refrax.view.locations")
     List<String> locations;
 
@@ -28,18 +31,24 @@ public class ViewRegistry {
 
     // Runs after SchemaRegistry (priority 100) and before ViewBindingRegistry (priority 300).
     void onStart(@Observes @Priority(200) StartupEvent event) {
-        Map<String, String> declaredBy = new HashMap<>();
-        for (String location : locations) {
-            String source = location.trim();
-            View view = ViewLoader.load(source);
+        try {
+            Map<String, String> declaredBy = new HashMap<>();
+            for (String location : locations) {
+                String source = location.trim();
+                View view = ViewLoader.load(source);
 
-            String previous = declaredBy.put(view.name(), source);
-            if (previous != null) {
-                throw new ViewValidationException(
-                        "Duplicate view name '" + view.name()
-                                + "' declared by both '" + previous + "' and '" + source + "'");
+                String previous = declaredBy.put(view.name(), source);
+                if (previous != null) {
+                    throw new ViewValidationException(
+                            "Duplicate view name '" + view.name()
+                                    + "' declared by both '" + previous + "' and '" + source + "'");
+                }
+                views.put(view.name(), view);
             }
-            views.put(view.name(), view);
+            LOG.infof("Loaded %d view(s): %s", views.size(), views.keySet());
+        } catch (ViewValidationException e) {
+            LOG.errorf(e, "Failed to load views from refrax.view.locations");
+            throw e;
         }
     }
 
