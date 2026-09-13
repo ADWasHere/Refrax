@@ -1,6 +1,7 @@
 package io.refrax.tenant;
 
 import io.quarkus.hibernate.reactive.panache.Panache;
+import io.refrax.tenant.exceptions.InvalidTenantIdException;
 import io.refrax.tenant.exceptions.TenantNotFoundException;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -17,7 +18,10 @@ import java.util.regex.Pattern;
 @ApplicationScoped
 public class TenantAwarePanache {
 
-    private static final Pattern SAFE_SCHEMA = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]{0,62}$");
+    // Hyphens are allowed (unlike a bare/unquoted Postgres identifier) because the schema is
+    // always interpolated into a double-quoted identifier below — safe there, unlike a quote,
+    // whitespace, or statement-separator character, which stay rejected.
+    private static final Pattern SAFE_SCHEMA = Pattern.compile("^[A-Za-z_][A-Za-z0-9_-]{0,62}$");
 
     @Inject
     TenantContext tenantContext;
@@ -52,7 +56,7 @@ public class TenantAwarePanache {
     /** Package-visible so the identifier check can be unit-tested without a live database. */
     static void requireSafeSchema(String schema) {
         if (schema == null || !SAFE_SCHEMA.matcher(schema).matches()) {
-            throw new IllegalStateException("Tenant id is not a valid schema identifier: " + schema);
+            throw new InvalidTenantIdException(schema);
         }
     }
 }
