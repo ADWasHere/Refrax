@@ -7,6 +7,7 @@ import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -21,6 +22,8 @@ import java.util.Optional;
 @ApplicationScoped
 public class ViewBindingRegistry {
 
+    private static final Logger LOG = Logger.getLogger(ViewBindingRegistry.class);
+
     @Inject
     ViewRegistry views;
 
@@ -31,16 +34,22 @@ public class ViewBindingRegistry {
 
     // Runs after ViewRegistry (200) and SchemaRegistry (100).
     void onStart(@Observes @Priority(300) StartupEvent event) {
-        for (View view : views.all()) {
-            EventSchema schema = schemas.find(view.eventType()).orElseThrow(() ->
-                    new ViewValidationException("View '" + view.name() + "' is over unknown event type '" + view.eventType() + "'"));
+        try {
+            for (View view : views.all()) {
+                EventSchema schema = schemas.find(view.eventType()).orElseThrow(() ->
+                        new ViewValidationException("View '" + view.name() + "' is over unknown event type '" + view.eventType() + "'"));
 
-            ViewBinding binding = new ViewBinding(view, schema);
-            if (bindings.put(view.name(), binding) != null) {
-                throw new ViewValidationException(
-                        "Duplicate binding for view " + view.name() + ": " + binding
-                );
+                ViewBinding binding = new ViewBinding(view, schema);
+                if (bindings.put(view.name(), binding) != null) {
+                    throw new ViewValidationException(
+                            "Duplicate binding for view " + view.name() + ": " + binding
+                    );
+                }
             }
+            LOG.infof("Bound %d view(s) to their schemas", bindings.size());
+        } catch (ViewValidationException e) {
+            LOG.errorf(e, "Failed to bind views to schemas");
+            throw e;
         }
     }
 

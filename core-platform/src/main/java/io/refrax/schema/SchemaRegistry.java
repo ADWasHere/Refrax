@@ -5,6 +5,7 @@ import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.logging.Logger;
 
 import java.util.*;
 
@@ -17,6 +18,8 @@ import java.util.*;
 @ApplicationScoped
 public class SchemaRegistry {
 
+    private static final Logger LOG = Logger.getLogger(SchemaRegistry.class);
+
     @ConfigProperty(name = "refrax.schema.locations")
     List<String> locations;
 
@@ -26,10 +29,13 @@ public class SchemaRegistry {
     void onStart(@Observes @Priority(100) StartupEvent event) {
         try {
             schemas.putAll(loadAll(locations));
+            LOG.infof("Loaded %d schema(s): %s", schemas.size(), schemas.keySet());
         } catch (SchemaValidationException e) {
             if (isMissingResourceFailure(e)) {
+                LOG.warnf("No schemas loaded, refrax.schema.locations resolved to nothing usable: %s", e.getMessage());
                 return;
             }
+            LOG.errorf(e, "Failed to load schemas from refrax.schema.locations");
             throw e;
         }
     }

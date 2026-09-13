@@ -5,8 +5,7 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
-
-import static io.quarkus.arc.ComponentsProvider.LOG;
+import org.jboss.logging.Logger;
 
 /**
  * Runs a read-model catch-up job for a specific tenant schema. This is useful for rebuilding
@@ -15,6 +14,9 @@ import static io.quarkus.arc.ComponentsProvider.LOG;
  */
 @ApplicationScoped
 public class TenantJobRunner {
+
+    private static final Logger LOG = Logger.getLogger(TenantJobRunner.class);
+
     @Inject
     TenantContext tenantContext;
 
