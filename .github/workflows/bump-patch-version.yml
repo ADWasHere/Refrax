@@ -51,7 +51,7 @@ jobs:
           git commit -m "chore(release): prepare release $RELEASE_VERSION [skip ci]"
           git tag -a "v$RELEASE_VERSION" -m "Release $RELEASE_VERSION"
 
-      - name: Increment Patch Version
+      - name: Increment Patch Version & Push
         working-directory: core-platform
         run: |
           mvn build-helper:parse-version versions:set \
@@ -63,4 +63,6 @@ jobs:
 
           git add pom.xml
           git commit -m "chore: prepare for next iteration $NEXT_VERSION [skip ci]"
-          git push origin HEAD --tags
+          
+          RELEASE_TAG=$(git describe --tags --abbrev=0)
+          git push origin HEAD "$RELEASE_TAG"
