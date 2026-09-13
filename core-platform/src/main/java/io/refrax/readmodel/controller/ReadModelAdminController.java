@@ -4,6 +4,7 @@ import io.refrax.readmodel.ReadModelConsumer;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -24,6 +25,15 @@ public class ReadModelAdminController {
 
     @Inject
     ReadModelConsumer consumer;
+
+    /** Current per-tenant lag: how far behind the read models are, queryable on demand. */
+    @GET
+    @Path("lag")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> lag() {
+        return consumer.lag()
+                .map(lag -> Response.ok(new JsonObject().put("lag", lag)).build());
+    }
 
     /** Full replay: wipe both read models + cursor, rebuild from seq 0. */
     @POST

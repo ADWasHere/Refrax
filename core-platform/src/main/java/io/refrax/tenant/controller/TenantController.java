@@ -1,5 +1,6 @@
 package io.refrax.tenant.controller;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.refrax.tenant.TenantAdminAllowlist;
 import io.refrax.tenant.TenantContext;
 import io.refrax.tenant.TenantProvisioningService;
@@ -25,12 +26,16 @@ public class TenantController {
     @Inject
     TenantAdminAllowlist adminAllowlist;
 
+    @Inject
+    MeterRegistry registry;
+
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     public Response createTenant(@Valid CreateTenantRequest req) {
         if (!adminAllowlist.isAdmin(tenantContext.getTenantId())) {
             LOG.warnf("Rejected tenant provisioning attempt by non-admin identity '%s' for schema '%s'",
                     tenantContext.getTenantId(), req.schema());
+            registry.counter("refrax.tenant.denied", "tenant", tenantContext.getTenantId()).increment();
             return Response.status(Response.Status.FORBIDDEN)
                     .entity("Not allowed to provision tenants.")
                     .build();

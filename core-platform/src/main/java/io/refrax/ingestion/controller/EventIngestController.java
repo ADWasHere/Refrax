@@ -1,9 +1,11 @@
 package io.refrax.ingestion.controller;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.refrax.ingestion.Events;
 import io.refrax.ingestion.IncomingEvent;
 import io.refrax.ingestion.IncomingEventValidator;
 import io.refrax.tenant.TenantAwarePanache;
+import io.refrax.tenant.TenantContext;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import jakarta.inject.Inject;
@@ -32,6 +34,12 @@ public class EventIngestController {
     @Inject
     TenantAwarePanache panache;
 
+    @Inject
+    TenantContext tenantContext;
+
+    @Inject
+    MeterRegistry registry;
+
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> append(JsonObject event) {
@@ -54,6 +62,7 @@ public class EventIngestController {
         MDC.put("event.id", eventId.toString());
 
         String schemaVersion = "v1";
+        String tenantId = tenantContext.getTenantId();
 
         return panache.withTransaction(() -> Events.findByEventId(eventId)
                         .flatMap(existing -> {
@@ -72,6 +81,7 @@ public class EventIngestController {
                             return entity.persistAndFlush()
                                     .map(saved -> {
                                         Events savedEvent = (Events) saved;
+                                        registry.counter("refrax.ingest.events", "tenant", tenantId).increment();
                                         LOG.debugf("Event ingested, seq=%d", savedEvent.seq);
                                         return Response.accepted().entity(Map.of("seq", savedEvent.seq)).build();
                                     });
