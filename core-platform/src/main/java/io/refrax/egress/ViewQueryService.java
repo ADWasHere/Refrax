@@ -7,6 +7,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
+import org.hibernate.exception.DataException;
+import org.jboss.logging.Logger;
 import org.jboss.logging.MDC;
 
 import java.util.List;
@@ -26,6 +28,8 @@ import java.util.function.Supplier;
  */
 @ApplicationScoped
 public class ViewQueryService {
+
+    private static final Logger LOG = Logger.getLogger(ViewQueryService.class);
 
     private static final String FORMAT_PARAM = "format";
     private static final String FROM_PARAM = "from";
@@ -121,7 +125,14 @@ public class ViewQueryService {
         }
     }
 
-    /** Executes a dynamically-built SQL statement as a Hibernate Reactive native query. */
+    /**
+     * Executes a dynamically-built SQL statement as a Hibernate Reactive native query.
+     *
+     * <p>A {@link DataException} here means a value reached the database and failed a type cast
+     * (e.g. {@code ::numeric}) despite {@code JsonbFilter}'s own value validation — the guard that
+     * work is meant to make unnecessary. That guard not holding is worth ERROR, not the routine
+     * WARN a caller-side validation error gets.
+     */
     private Uni<List<Object[]>> executeQuery(SqlBuilder q) {
         return Panache.getSession().flatMap(session -> {
             var query = session.createNativeQuery(q.sql(), Object[].class);
@@ -130,6 +141,8 @@ public class ViewQueryService {
                 query = query.setParameter(i + 1, params.get(i));
             }
             return query.getResultList();
-        });
+        }).onFailure(DataException.class).invoke(e ->
+                LOG.errorf(e, "Type-cast failure executing a filtered query — a value reached the "
+                        + "database without passing its declared-type guard"));
     }
 }
