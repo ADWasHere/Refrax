@@ -119,6 +119,24 @@ class ReadModelConsumerTest {
     }
 
     @Test
+    void lagReflectsBacklogAndDropsToZeroAfterCatchUp() {
+        String sensor = "sensor-" + UUID.randomUUID();
+        post(sensor, 1.0);
+        post(sensor, 2.0);
+        post(sensor, 3.0);
+
+        // The scheduler is disabled in tests, so nothing has caught up yet — a real backlog
+        // exists, exactly the "stopped consumer, backlog piled up" scenario.
+        long lagBefore = await(() -> consumer.lag());
+        assertEquals(3, lagBefore);
+
+        await(() -> consumer.catchUp());
+
+        long lagAfter = await(() -> consumer.lag());
+        assertEquals(0, lagAfter);
+    }
+
+    @Test
     void readModelOutageDoesNotBlockIngest() {
         String sensor = "sensor-" + UUID.randomUUID();
 

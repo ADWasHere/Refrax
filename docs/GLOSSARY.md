@@ -14,6 +14,16 @@ step.
 
 **Reference:** `core-platform/src/main/java/io/refrax/gate/Gate.java`
 
+## Consumer lag
+
+How far a tenant's read models are behind the log: the highest `seq` already ingested, minus the
+projection cursor's position. Zero means fully caught up. A catch-up run that finds non-zero lag
+logs its start and completion at INFO (with count and duration); lag past a configurable
+threshold also logs a WARN. Exposed both on demand and as a [gauge](#gauge--counter).
+
+**Reference:** `core-platform/src/main/java/io/refrax/readmodel/ReadModelConsumer.java` (`lag()`),
+[GUIDE.md § Endpoints](GUIDE.md#endpoints)
+
 ## @context
 
 The JSON-LD mechanism that maps short terms in a document (e.g. `unit`) to their full vocabulary
@@ -22,6 +32,17 @@ URIs. Refrax's [NGSI-LD](#ngsi-ld) output always derives its `@context` from the
 what the fields actually mean.
 
 **Reference:** `core-platform/src/main/java/io/refrax/projection/NgsiLdProjector.java`
+
+## Correlation ID
+
+A per-request identifier — read from an `X-Correlation-ID` header if the caller sends one,
+otherwise generated — held in [MDC](#mdc-mapped-diagnostic-context) for the request's duration
+and echoed back in the response header. Logging-only: never persisted, so it cannot connect an
+ingest request to the separate, later, batched consumer run that projects that event —
+[`event.id`](#event) is what does that instead, since it's actually stored.
+
+**Reference:** `core-platform/src/main/java/io/refrax/logging/CorrelationIdFilter.java`,
+[GUIDE.md § Observability](GUIDE.md#observability)
 
 ## Crypto-shredding
 
@@ -139,6 +160,16 @@ compliance rather than a competing broker.
 
 **Reference:** [README.md § What this is and isn't](../README.md#what-this-is-and-isnt)
 
+## Gauge / Counter
+
+The two Micrometer metric shapes Refrax exposes at `/q/metrics`: a **gauge** holds a current
+value that can go up or down (e.g. [consumer lag](#consumer-lag)), a **counter** only ever
+increases (e.g. events ingested, tenant-provisioning attempts denied). Both are tagged by
+`tenant`, so they graph per tenant, not only in aggregate.
+
+**Reference:** `core-platform/src/main/java/io/refrax/readmodel/ReadModelMetrics.java`,
+[GUIDE.md § Observability](GUIDE.md#observability)
+
 ## Internal field
 
 The default status of any payload field not declared [exposable](#exposable-field) in a schema.
@@ -155,6 +186,24 @@ today — queried via `from`/`to` on `/series`, never filtered directly on an ax
 
 **Reference:** `core-platform/src/main/java/io/refrax/view/MatchType.java`,
 [GUIDE.md § Range axes can't be filtered directly](GUIDE.md#range-axes-cant-be-filtered-directly)
+
+## MDC (Mapped Diagnostic Context)
+
+A per-request/per-event map of key-value pairs (`tenant.id`, `correlation.id`, `event.type`,
+`event.id`) that Quarkus attaches to every log line written while a value is set, without each
+call site restating it. Scoped to the current Vert.x context rather than a raw OS thread, so
+concurrent requests sharing the same event-loop thread never see each other's values.
+
+**Reference:** [docs/LOGGING.md](LOGGING.md), [GUIDE.md § Observability](GUIDE.md#observability)
+
+## Metrics
+
+Operational counters and [gauges](#gauge--counter) exposed at `/q/metrics` in Prometheus text
+format via Micrometer — for graphing trends over time (Grafana or similar), which logs alone
+don't give you. Includes standard JVM/HTTP metrics for free, plus Refrax-specific ones like
+[consumer lag](#consumer-lag).
+
+**Reference:** [GUIDE.md § Observability](GUIDE.md#observability)
 
 ## Multi-tenancy (schema-per-tenant)
 

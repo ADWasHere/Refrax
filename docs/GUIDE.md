@@ -1,10 +1,10 @@
 # API Guide
 
-Everything the HTTP API can do today: every endpoint, the dynamic JSONB filter syntax, and how
-to get output in a format other than Refrax's own. For the concepts behind all this (event
-sourcing, the capability gate, views, multi-tenancy), see the [README](../README.md). For
-what's planned but not built yet, see the [ROADMAP](../ROADMAP.md). For an unfamiliar term, see
-the [Glossary](GLOSSARY.md).
+Everything the HTTP API can do today: every endpoint, the dynamic JSONB filter syntax, how to get
+output in a format other than Refrax's own, and how to observe it running (logging context and
+metrics). For the concepts behind all this (event sourcing, the capability gate, views,
+multi-tenancy), see the [README](../README.md). For what's planned but not built yet, see the
+[ROADMAP](../ROADMAP.md). For an unfamiliar term, see the [Glossary](GLOSSARY.md).
 
 All examples below were run against a live local stack (`docker compose up`, see the
 [Quickstart](../README.md#quickstart)) using the bundled `AirQualityReading` schema and its two
@@ -188,6 +188,17 @@ curl -X POST http://localhost:8787/v1/tenants \
 
 A non-allowlisted caller gets `403 {"error":"Not allowed to provision tenants."}`.
 
+### Admin: `GET /v1/admin/readmodel/lag`
+
+How many events past the projection cursor are not yet reflected in the calling tenant's read
+models. Zero means fully caught up; see [Observability](#observability) for how this is also
+logged and graphable as a metric.
+
+```bash
+curl -H "X-Tenant-ID: public" http://localhost:8787/v1/admin/readmodel/lag
+# -> 200 {"lag":0}
+```
+
 ### Admin: `POST /v1/admin/readmodel/replay` and `/reproject`
 
 Operational, **not secured beyond the ordinary tenant header** — don't expose these publicly.
@@ -366,3 +377,46 @@ Declaring `"personalData": true` on a schema field does two things today:
 
 What it does **not** yet do: enable erasure of already-ingested personal data from the immutable
 log itself (crypto-shredding). See the [ROADMAP](../ROADMAP.md) for that distinction.
+
+## Observability
+
+### Logging context (MDC)
+
+Every log line written while handling a request or projecting an event carries whichever of
+these apply, without any call site restating them:
+
+| MDC key          | Set                                                               | Cleared                    |
+|-------------------|--------------------------------------------------------------------|------------------------------|
+| `tenant.id`       | as soon as the tenant is resolved for the request                  | when the request ends        |
+| `correlation.id`  | from `X-Correlation-ID` if sent, otherwise a generated UUID        | when the response is sent    |
+| `event.type`      | during ingest, and again per event during read-model projection    | right after                  |
+| `event.id`        | during ingest, and again per event during read-model projection    | right after                  |
+
+`correlation.id` is a logging-only construct — it never outlives the request, so it cannot tie
+an ingest request to the separate, later, batched consumer run that projects that event.
+`event.id` is what bridges that gap, since it's actually persisted with the event.
+
+Every response also carries the resolved `X-Correlation-ID` header back, whether you sent one or
+not — paste it straight into a log query.
+
+See [docs/LOGGING.md](LOGGING.md) for which level (ERROR/WARN/INFO/DEBUG) a given situation gets
+and why. `DEBUG` is off by default, so routine per-event activity (an event ingested, one
+projected into a read model) is silent unless you turn it on.
+
+### Metrics
+
+`/q/metrics` exposes Prometheus-format metrics via Micrometer — standard JVM and HTTP metrics
+out of the box (e.g. `jvm_memory_used_bytes`, `http_server_active_requests`), plus:
+
+| Metric                       | Type    | Tags     | Meaning                                                                 |
+|-------------------------------|---------|----------|----------------------------------------------------------------------------|
+| `refrax_readmodel_lag`        | gauge   | `tenant` | Same value as [`GET .../lag`](#admin-get-v1adminreadmodellag), refreshed every scheduled catch-up tick (~3s). |
+| `refrax_ingest_events_total`  | counter | `tenant` | Events successfully accepted via `POST /v1/events` (not duplicates).       |
+| `refrax_tenant_denied_total`  | counter | `tenant` | Rejected `POST /v1/tenants` attempts from a non-allowlisted identity.      |
+
+```bash
+curl http://localhost:8787/q/metrics | grep refrax_
+# refrax_readmodel_lag{tenant="public"} 0.0
+# refrax_ingest_events_total{tenant="public"} 1.0
+# refrax_tenant_denied_total{tenant="sneaky"} 1.0
+```

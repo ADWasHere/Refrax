@@ -5,6 +5,7 @@ import io.refrax.gate.ExposableEntity;
 import io.refrax.gate.Gate;
 import io.refrax.schema.EventSchema;
 import io.refrax.schema.SchemaRegistry;
+import io.refrax.tenant.TenantContext;
 import io.refrax.tenant.TenantRepository;
 import io.smallrye.common.vertx.VertxContext;
 import io.smallrye.mutiny.Multi;
@@ -13,6 +14,7 @@ import io.vertx.core.Context;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import org.jboss.logging.MDC;
 
@@ -55,6 +57,16 @@ public class ReadModelConsumer {
     @Inject
     TenantJobRunner tenantJobRunner;
 
+    @Inject
+    TenantContext tenantContext;
+
+    @Inject
+    ReadModelMetrics metrics;
+
+    /** Event-count lag above which a catch-up start is worth a WARN, not just an INFO. */
+    @ConfigProperty(name = "refrax.readmodel.lag-warn-threshold", defaultValue = "1000")
+    long lagWarnThreshold;
+
     /**
      * Periodic catch-up. Skips if a run is still in flight, so it never overlaps itself.
      * <br/><br/>
@@ -78,20 +90,56 @@ public class ReadModelConsumer {
                         .subscribe().with(emitter::complete, emitter::fail)));
     }
 
-    /** Processes every event after the cursor, advancing it as it goes. Returns the new cursor. */
-    public Uni<Long> catchUp() {
+    /**
+     * Current per-tenant lag: how many events past the cursor are not yet reflected in the read
+     * models. The one thing an operator needs to answer "is the read model stale right now?"
+     * without reading a log line or attaching a debugger.
+     */
+    public Uni<Long> lag() {
         return store.cursor(CONSUMER)
-                .flatMap(this::drainFrom);
+                .flatMap(cursor -> store.latestSeq().map(latestSeq -> Math.max(0, latestSeq - cursor)));
     }
 
-    /** Drains the log from a given seq, in batches, until it reaches the end. Returns the new cursor.
+    /**
+     * Processes every event after the cursor, advancing it as it goes. Returns the new cursor.
+     *
+     * <p>Idle ticks (nothing to do) log nothing, on purpose — the scheduler fires every 3s
+     * regardless of whether there is a backlog. A run that actually has something to process
+     * logs its start (with the lag it found) and its completion (with how many events and how
+     * long it took), so a catch-up after downtime is visible without reading source code.
+     */
+    public Uni<Long> catchUp() {
+        return store.cursor(CONSUMER).flatMap(from -> store.latestSeq().flatMap(latestSeq -> {
+            long lag = Math.max(0, latestSeq - from);
+            metrics.recordLag(tenantContext.getTenantId(), lag);
+            if (lag == 0) {
+                return Uni.createFrom().item(from);
+            }
+
+            if (lag > lagWarnThreshold) {
+                LOG.warnf("Read-model consumer is %d event(s) behind (threshold %d); cursor=%d, latestSeq=%d",
+                        lag, lagWarnThreshold, from, latestSeq);
+            }
+            LOG.infof("Catch-up started: %d event(s) behind", lag);
+            long startNanos = System.nanoTime();
+
+            return drainFrom(from, 0).invoke(result -> {
+                long tookMs = (System.nanoTime() - startNanos) / 1_000_000;
+                LOG.infof("Catch-up completed: processed %d event(s) in %d ms, cursor now at seq=%d",
+                        result.count(), tookMs, result.cursor());
+            }).map(Run::cursor);
+        }));
+    }
+
+    /** Drains the log from a given seq, in batches, until it reaches the end. Returns the new cursor
+     * and the total events processed across every batch of this run.
      * Is recursive, but each batch is a new transaction and on a worker thread, so it won't blow the stack.
      */
-    private Uni<Long> drainFrom(long from) {
+    private Uni<Run> drainFrom(long from, long processedSoFar) {
         return store.readEventsAfter(from, BATCH)
                 .flatMap(entries -> {
                     if (entries.isEmpty()) {
-                        return Uni.createFrom().item(new Batch(from, 0));
+                        return Uni.createFrom().item(new Run(from, processedSoFar));
                     }
 
                     List<LatestRow> latest = new ArrayList<>();
@@ -103,16 +151,17 @@ public class ReadModelConsumer {
 
                     long cursor = entries.getLast().seq();
                     int count = entries.size();
+                    long total = processedSoFar + count;
 
                     return store.insertSeries(series)
                             .flatMap(v -> store.upsertLatest(latest))
                             .flatMap(v -> store.saveCursor(CONSUMER, cursor))
-                            .invoke(() -> LOG.debugf("Caught up %d event(s), cursor now at seq=%d", count, cursor))
-                            .replaceWith(new Batch(cursor, count));
-                })
-                .flatMap(batch -> batch.count() < BATCH
-                        ? Uni.createFrom().item(batch.cursor())
-                        : drainFrom(batch.cursor()));
+                            .invoke(() -> LOG.debugf("Caught up %d event(s) in this batch, cursor now at seq=%d", count, cursor))
+                            .replaceWith(new Run(cursor, total))
+                            .flatMap(run -> count < BATCH
+                                    ? Uni.createFrom().item(run)
+                                    : drainFrom(run.cursor(), run.count()));
+                });
     }
 
     /** Deletes both read models and the cursor, then rebuilds them from the log. */
@@ -179,6 +228,7 @@ public class ReadModelConsumer {
         }
     }
 
-    private record Batch(long cursor, int count) {
+    /** A catch-up run's progress: the cursor it has reached and events processed so far. */
+    private record Run(long cursor, long count) {
     }
 }

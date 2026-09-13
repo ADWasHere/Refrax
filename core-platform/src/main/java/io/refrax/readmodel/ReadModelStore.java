@@ -106,6 +106,13 @@ public class ReadModelStore {
                 .map(rows -> rows.stream().map(JournalEntry::fromEntity).toList()));
     }
 
+    /** The highest {@code seq} in the current tenant's log, or 0 if it is empty. */
+    public Uni<Long> latestSeq() {
+        return panache.withTransaction(() -> Events.<Events>find("order by seq desc")
+                .firstResult()
+                .map(event -> event == null ? 0L : event.getSeq()));
+    }
+
     public Uni<JournalEntry> findLatestEvent(String eventType, String identityField, String identityValue) {
         return panache.withTransaction(() -> Events.<Events>find("eventType = ?1 order by seq desc", eventType)
                 .list()
