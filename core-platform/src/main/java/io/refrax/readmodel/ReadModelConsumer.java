@@ -107,7 +107,7 @@ public class ReadModelConsumer {
                     return store.insertSeries(series)
                             .flatMap(v -> store.upsertLatest(latest))
                             .flatMap(v -> store.saveCursor(CONSUMER, cursor))
-                            .invoke(() -> LOG.infof("Caught up %d event(s), cursor now at seq=%d", count, cursor))
+                            .invoke(() -> LOG.debugf("Caught up %d event(s), cursor now at seq=%d", count, cursor))
                             .replaceWith(new Batch(cursor, count));
                 })
                 .flatMap(batch -> batch.count() < BATCH
