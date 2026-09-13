@@ -29,6 +29,8 @@ public class TenantController {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response createTenant(@Valid CreateTenantRequest req) {
         if (!adminAllowlist.isAdmin(tenantContext.getTenantId())) {
+            LOG.warnf("Rejected tenant provisioning attempt by non-admin identity '%s' for schema '%s'",
+                    tenantContext.getTenantId(), req.schema());
             return Response.status(Response.Status.FORBIDDEN)
                     .entity("Not allowed to provision tenants.")
                     .build();
@@ -36,6 +38,7 @@ public class TenantController {
 
         try {
             provisioningService.provisionTenant(req.schema());
+            LOG.infof("Tenant provisioned, schema=%s", req.schema());
             return Response.status(Response.Status.CREATED).build();
         } catch (Exception e) {
             LOG.error("Error occurred while creating tenant", e);
