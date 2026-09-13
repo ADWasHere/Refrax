@@ -13,6 +13,8 @@ import io.vertx.core.Context;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
+import org.jboss.logging.MDC;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -32,6 +34,8 @@ import java.util.List;
  */
 @ApplicationScoped
 public class ReadModelConsumer {
+
+    private static final Logger LOG = Logger.getLogger(ReadModelConsumer.class);
 
     static final String CONSUMER = "latest+series";
     private static final int BATCH = 500;
@@ -103,6 +107,7 @@ public class ReadModelConsumer {
                     return store.insertSeries(series)
                             .flatMap(v -> store.upsertLatest(latest))
                             .flatMap(v -> store.saveCursor(CONSUMER, cursor))
+                            .invoke(() -> LOG.infof("Caught up %d event(s), cursor now at seq=%d", count, cursor))
                             .replaceWith(new Batch(cursor, count));
                 })
                 .flatMap(batch -> batch.count() < BATCH
@@ -133,35 +138,44 @@ public class ReadModelConsumer {
     }
 
     private void accumulate(final JournalEntry entry, List<LatestRow> latest, List<SeriesRow> series) {
-        String eventType = entry.eventType();
-        EventSchema schema = schemas.find(eventType).orElse(null);
-        if (schema == null) {
-            return; // undeclared event type: cursor still advances, nothing materialised
-        }
-        JsonObject payload = entry.payload();
-        OffsetDateTime validTime = entry.validTime();
-        long seq = entry.seq();
+        MDC.put("event.type", entry.eventType());
+        MDC.put("event.id", String.valueOf(entry.eventId()));
+        try {
+            String eventType = entry.eventType();
+            EventSchema schema = schemas.find(eventType).orElse(null);
+            if (schema == null) {
+                LOG.warnf("Skipping event with undeclared event type '%s' (seq=%d); cursor still advances", eventType, entry.seq());
+                return; // undeclared event type: cursor still advances, nothing materialised
+            }
+            JsonObject payload = entry.payload();
+            OffsetDateTime validTime = entry.validTime();
+            long seq = entry.seq();
 
-        ExposableEntity entity = gate.project(schema, payload, validTime);
-        JsonObject exposed = ReadModelProjection.exposedValues(entity);
+            ExposableEntity entity = gate.project(schema, payload, validTime);
+            JsonObject exposed = ReadModelProjection.exposedValues(entity);
 
-        latest.add(LatestRow.builder()
-                .eventType(eventType)
-                .entityId(entity.id())
-                .exposedJson(exposed)
-                .observedAt(validTime)
-                .seq(seq)
-                .build());
-
-        // The time-series read model is partitioned on valid-time, which must be present.
-        if (validTime != null) {
-            series.add(SeriesRow.builder()
+            latest.add(LatestRow.builder()
                     .eventType(eventType)
-                    .seq(seq)
                     .entityId(entity.id())
                     .exposedJson(exposed)
                     .observedAt(validTime)
+                    .seq(seq)
                     .build());
+
+            // The time-series read model is partitioned on valid-time, which must be present.
+            if (validTime != null) {
+                series.add(SeriesRow.builder()
+                        .eventType(eventType)
+                        .seq(seq)
+                        .entityId(entity.id())
+                        .exposedJson(exposed)
+                        .observedAt(validTime)
+                        .build());
+            }
+            LOG.debugf("Projected event into read model, seq=%d", seq);
+        } finally {
+            MDC.remove("event.type");
+            MDC.remove("event.id");
         }
     }
 

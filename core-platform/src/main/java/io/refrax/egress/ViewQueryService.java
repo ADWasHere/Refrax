@@ -7,8 +7,10 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.MDC;
 
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * Orchestrates view reads against the read model.
@@ -52,13 +54,15 @@ public class ViewQueryService {
     public Uni<Response> latest(String viewName, MultivaluedMap<String, String> query) {
         ViewResolver.Resolved r = viewResolver.resolve(viewName, query.getFirst(FORMAT_PARAM));
 
-        SqlBuilder q = new SqlBuilder(
-                "select entity_id, exposed_json, observed_at from reading_latest where event_type = ")
-                .bind(r.binding().eventType());
-        axisFilterParser.appendAxisFilters(r.binding(), query, java.util.Set.of(FORMAT_PARAM), q);
+        return withEventTypeMdc(r.binding().eventType(), () -> {
+            SqlBuilder q = new SqlBuilder(
+                    "select entity_id, exposed_json, observed_at from reading_latest where event_type = ")
+                    .bind(r.binding().eventType());
+            axisFilterParser.appendAxisFilters(r.binding(), query, java.util.Set.of(FORMAT_PARAM), q);
 
-        return panache.withTransaction(() -> executeQuery(q)
-                .map(rows -> viewEntityMapper.mapLatest(rows, r)));
+            return panache.withTransaction(() -> executeQuery(q)
+                    .map(rows -> viewEntityMapper.mapLatest(rows, r)));
+        });
     }
 
     /**
@@ -72,14 +76,16 @@ public class ViewQueryService {
     public Uni<Response> stream(String viewName, String requestedFormat, long after) {
         ViewResolver.Resolved r = viewResolver.resolve(viewName, requestedFormat);
 
-        SqlBuilder q = new SqlBuilder(
-                "select seq, entity_id, exposed_json, observed_at from reading_series where event_type = ")
-                .bind(r.binding().eventType())
-                .sql(" and seq > ").bind(after)
-                .sql(" order by seq asc limit " + SLICE_LIMIT);
+        return withEventTypeMdc(r.binding().eventType(), () -> {
+            SqlBuilder q = new SqlBuilder(
+                    "select seq, entity_id, exposed_json, observed_at from reading_series where event_type = ")
+                    .bind(r.binding().eventType())
+                    .sql(" and seq > ").bind(after)
+                    .sql(" order by seq asc limit " + SLICE_LIMIT);
 
-        return panache.withTransaction(() -> executeQuery(q)
-                .map(rows -> Response.ok(viewEntityMapper.sliceOf(rows, r)).build()));
+            return panache.withTransaction(() -> executeQuery(q)
+                    .map(rows -> Response.ok(viewEntityMapper.sliceOf(rows, r)).build()));
+        });
     }
 
     /**
@@ -92,15 +98,27 @@ public class ViewQueryService {
     public Uni<Response> series(String viewName, MultivaluedMap<String, String> query) {
         ViewResolver.Resolved r = viewResolver.resolve(viewName, query.getFirst(FORMAT_PARAM));
 
-        SqlBuilder q = new SqlBuilder(
-                "select seq, entity_id, exposed_json, observed_at from reading_series where event_type = ")
-                .bind(r.binding().eventType());
-        axisFilterParser.appendAxisFilters(r.binding(), query, java.util.Set.of(FORMAT_PARAM, FROM_PARAM, TO_PARAM), q);
-        axisFilterParser.appendTimeFilters(query, q);
-        q.sql(" order by observed_at asc, seq asc limit ").bind(SLICE_LIMIT);
+        return withEventTypeMdc(r.binding().eventType(), () -> {
+            SqlBuilder q = new SqlBuilder(
+                    "select seq, entity_id, exposed_json, observed_at from reading_series where event_type = ")
+                    .bind(r.binding().eventType());
+            axisFilterParser.appendAxisFilters(r.binding(), query, java.util.Set.of(FORMAT_PARAM, FROM_PARAM, TO_PARAM), q);
+            axisFilterParser.appendTimeFilters(query, q);
+            q.sql(" order by observed_at asc, seq asc limit ").bind(SLICE_LIMIT);
 
-        return panache.withTransaction(() -> executeQuery(q)
-                .map(rows -> Response.ok(viewEntityMapper.sliceOf(rows, r)).build()));
+            return panache.withTransaction(() -> executeQuery(q)
+                    .map(rows -> Response.ok(viewEntityMapper.sliceOf(rows, r)).build()));
+        });
+    }
+
+    private Uni<Response> withEventTypeMdc(String eventType, Supplier<Uni<Response>> work) {
+        MDC.put("event.type", eventType);
+        try {
+            return work.get().eventually(() -> MDC.remove("event.type"));
+        } catch (RuntimeException e) {
+            MDC.remove("event.type");
+            throw e;
+        }
     }
 
     /** Executes a dynamically-built SQL statement as a Hibernate Reactive native query. */

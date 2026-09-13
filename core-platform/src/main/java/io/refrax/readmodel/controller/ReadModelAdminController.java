@@ -10,6 +10,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
 
 /**
  * Operational endpoints to drive the read-model consumer by hand: rebuild everything from the
@@ -19,6 +20,8 @@ import jakarta.ws.rs.core.Response;
 @Path("v1/admin/readmodel")
 public class ReadModelAdminController {
 
+    private static final Logger LOG = Logger.getLogger(ReadModelAdminController.class);
+
     @Inject
     ReadModelConsumer consumer;
 
@@ -27,9 +30,13 @@ public class ReadModelAdminController {
     @Path("replay")
     @Produces(MediaType.APPLICATION_JSON)
     public Uni<Response> replayAll() {
+        LOG.info("Full read-model replay triggered");
         return consumer.replayAll()
-                .map(throughSeq -> Response.ok(
-                        new JsonObject().put("status", "rebuilt").put("throughSeq", throughSeq)).build());
+                .map(throughSeq -> {
+                    LOG.infof("Full read-model replay completed, throughSeq=%d", throughSeq);
+                    return Response.ok(
+                            new JsonObject().put("status", "rebuilt").put("throughSeq", throughSeq)).build();
+                });
     }
 
     /** Targeted replay: re-derive one entity's current-state row from the log, touching nothing else. */
@@ -44,9 +51,14 @@ public class ReadModelAdminController {
                     .entity(new JsonObject().put("error",
                             "eventType, identityField and identity are all required")).build());
         }
+        LOG.infof("Targeted reprojection triggered, eventType=%s identityField=%s identity=%s",
+                eventType, identityField, identity);
         return consumer.reprojectEntity(eventType, identityField, identity)
-                .map(v -> Response.ok(
-                        new JsonObject().put("status", "reprojected").put("identity", identity)).build());
+                .map(v -> {
+                    LOG.info("Targeted reprojection completed");
+                    return Response.ok(
+                            new JsonObject().put("status", "reprojected").put("identity", identity)).build();
+                });
     }
 
     private static boolean isBlank(String s) {
