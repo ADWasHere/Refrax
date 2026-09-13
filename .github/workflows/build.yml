@@ -1,0 +1,23 @@
+name: Module - Build & Test
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+          cache-dependency-path: 'core-platform/pom.xml'
+
+      - name: Build and Test with Maven
+        working-directory: core-platform
+        run: mvn -B clean package -Dquarkus.analytics.disabled=true
