@@ -1,4 +1,4 @@
-name: Main Orchestrator
+name: Main Pipeline
 
 on:
   push:
@@ -8,13 +8,13 @@ on:
   workflow_dispatch:
     inputs:
       bump_type:
-        description: 'Which type of version bump to perform (patch, minor, major)'
+        description: 'Select release bump type'
         required: true
         default: 'minor'
         type: choice
         options:
-          - patch
           - minor
+          - patch
           - major
 
 permissions:
@@ -26,10 +26,20 @@ jobs:
 
   call-bump:
     needs: call-build
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/bump-version.yml
     with:
-      bump_type: ${{ github.event.inputs.bump_type || 'patch' }}
+      bump_type: ${{ github.event.inputs.bump_type }}
+    secrets:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  call-create-support-branch:
+    needs: call-bump
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.bump_type == 'minor' || github.event.inputs.bump_type == 'major')
+    uses: ./.github/workflows/create-support-branch.yml
+    with:
+      release_version: ${{ needs.call-bump.outputs.release_version }}
     secrets:
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

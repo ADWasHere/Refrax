@@ -1,0 +1,61 @@
+name: Module - Create Support Branch
+
+on:
+  workflow_call:
+    inputs:
+      release_version:
+        required: true
+        type: string
+    secrets:
+      APP_ID:
+        required: true
+      APP_PRIVATE_KEY:
+        required: true
+
+jobs:
+  create-branch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.generate-token.outputs.token }}
+          ref: "v${{ inputs.release_version }}"
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+          cache-dependency-path: 'core-platform/pom.xml'
+
+      - name: Git Config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create & Push Support Branch
+        working-directory: core-platform
+        run: |
+          RAW_VER="${{ inputs.release_version }}"
+          MAJOR_MINOR=$(echo "$RAW_VER" | cut -d. -f1,2)
+          BRANCH_NAME="support/${MAJOR_MINOR}.x"
+          
+          git checkout -b "$BRANCH_NAME"
+          
+          NEXT_PATCH="${MAJOR_MINOR}.1-SNAPSHOT"
+          mvn versions:set -DnewVersion=$NEXT_PATCH -DgenerateBackupPoms=false
+          
+          git add pom.xml
+          git commit -m "chore: prepare support branch for $NEXT_PATCH [skip ci]"
+          
+          git push origin "$BRANCH_NAME"
