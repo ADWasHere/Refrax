@@ -230,4 +230,5 @@ file for the full text. This summary is not legal advice.
 
 The most valuable contribution is to the idea. If you maintain an NGSI-LD broker or work in the
 FIWARE ecosystem, feedback on the structural-compliance approach is especially useful. Issues
-and design proposals are welcome.
+and design proposals are welcome. If you're adding a log statement, see
+[docs/LOGGING.md](docs/LOGGING.md) for the level convention.
