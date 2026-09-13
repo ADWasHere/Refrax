@@ -3,12 +3,19 @@ name: Increment Maven Version
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 permissions:
   contents: write
 
 jobs:
+  run-build:
+    uses: ./.github/workflows/maven.yml
+
   bump-version:
+    needs: run-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -23,6 +30,7 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
+          cache-dependency-path: 'core-platform/pom.xml'
 
       - name: Git Config
         run: |
@@ -40,7 +48,7 @@ jobs:
           
           # Git Commit & Tag for Release
           git add pom.xml
-          git commit -m "chore(release): prepare release $RELEASE_VERSION"
+          git commit -m "chore(release): prepare release $RELEASE_VERSION [skip ci]"
           git tag -a "v$RELEASE_VERSION" -m "Release $RELEASE_VERSION"
 
       - name: Increment Patch Version (x.y.z -> x.y.z+1-SNAPSHOT)
@@ -55,5 +63,5 @@ jobs:
 
           # Git Commit & Push
           git add pom.xml
-          git commit -m "chore: prepare for next development iteration $NEXT_VERSION"
+          git commit -m "chore: prepare for next development iteration $NEXT_VERSION [skip ci]"
           git push origin HEAD --tags
