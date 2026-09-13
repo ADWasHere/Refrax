@@ -2,6 +2,12 @@ name: Module - Version Bump
 
 on:
   workflow_call:
+    inputs:
+      bump_type:
+        description: 'Typ des Bumps (patch, minor, major)'
+        required: false
+        default: 'patch'
+        type: string
     secrets:
       APP_ID:
         required: true
@@ -51,11 +57,21 @@ jobs:
           git commit -m "chore(release): prepare release $RELEASE_VERSION [skip ci]"
           git tag -a "v$RELEASE_VERSION" -m "Release $RELEASE_VERSION"
 
-      - name: Increment Patch Version & Push
+      - name: Increment Version & Push
         working-directory: core-platform
         run: |
+          BUMP_TYPE="${{ inputs.bump_type }}"
+          
+          if [ "$BUMP_TYPE" = "major" ]; then
+            NEW_VER_EXPR='\${parsedVersion.nextMajorVersion}.0.0-SNAPSHOT'
+          elif [ "$BUMP_TYPE" = "minor" ]; then
+            NEW_VER_EXPR='\${parsedVersion.majorVersion}.\${parsedVersion.nextMinorVersion}.0-SNAPSHOT'
+          else
+            NEW_VER_EXPR='\${parsedVersion.majorVersion}.\${parsedVersion.minorVersion}.\${parsedVersion.nextIncrementalVersion}-SNAPSHOT'
+          fi
+
           mvn build-helper:parse-version versions:set \
-            -DnewVersion=\${parsedVersion.majorVersion}.\${parsedVersion.minorVersion}.\${parsedVersion.nextIncrementalVersion}-SNAPSHOT \
+            -DnewVersion=$NEW_VER_EXPR \
             -DgenerateBackupPoms=false
 
           NEXT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
