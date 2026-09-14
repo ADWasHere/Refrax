@@ -34,6 +34,26 @@ jobs:
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
+  call-publish-docker:
+    needs: call-bump
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/docker-publish.yml
+    with:
+      release_version: ${{ needs.call-bump.outputs.release_version }}
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+  call-update-compose:
+    needs: [call-bump, call-publish-docker]
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/update-docker-compose.yml
+    with:
+      release_version: ${{ needs.call-bump.outputs.release_version }}
+    secrets:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
   call-create-support-branch:
     needs: call-bump
     if: github.event_name == 'workflow_dispatch' && (github.event.inputs.bump_type == 'minor' || github.event.inputs.bump_type == 'major')
