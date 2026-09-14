@@ -16,7 +16,7 @@ services:
       retries: 5
 
   core:
-    image: adwashere/refrax-core-platform:0.2.0
+    image: adwashere/refrax-core-platform:0.3.1
     restart: always
     ports:
       - "${HTTP_PORT:-8787}:${HTTP_PORT:-8787}"
