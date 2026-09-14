@@ -28,26 +28,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ steps.generate-token.outputs.token }}
+          fetch-depth: 0
 
-      - name: Git Config
+      - name: Git Config & Pull
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin ${{ github.ref_name }} --rebase
 
       - name: Update docker-compose.yml Version Tag
         run: |
           NEW_VERSION="${{ inputs.release_version }}"
           COMPOSE_FILE="core-platform/docker-compose.yml"
-
           sed -i -E "s|(image:\s*adwashere/refrax-core-platform:)[^[:space:]]+|\1${NEW_VERSION}|g" "$COMPOSE_FILE"
 
       - name: Commit & Push Changes
         run: |
           git add core-platform/docker-compose.yml
-          
           if ! git diff --staged --quiet; then
             git commit -m "chore(release): update docker-compose.yml to version ${{ inputs.release_version }} [skip ci]"
-            git push origin HEAD
-          else
-            echo "No changes detected in docker-compose.yml"
+            git push origin HEAD:${{ github.ref_name }}
           fi
