@@ -2,9 +2,11 @@ name: Main Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+          - "main"
+          - "support/**"
   pull_request:
-    branches: [ "main" ]
+
   workflow_dispatch:
     inputs:
       bump_type:
