@@ -1,0 +1,53 @@
+name: Module - Update Docker Compose
+
+on:
+  workflow_call:
+    inputs:
+      release_version:
+        required: true
+        type: string
+        description: "Release version to be used for the Docker image tag"
+    secrets:
+      APP_ID:
+        required: true
+      APP_PRIVATE_KEY:
+        required: true
+
+jobs:
+  update-compose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App Token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.generate-token.outputs.token }}
+
+      - name: Git Config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update docker-compose.yml Version Tag
+        run: |
+          NEW_VERSION="${{ inputs.release_version }}"
+          COMPOSE_FILE="core-platform/docker-compose.yml"
+
+          sed -i -E "s|(image:\s*adwashere/refrax-core-platform:)[^[:space:]]+|\1${NEW_VERSION}|g" "$COMPOSE_FILE"
+
+      - name: Commit & Push Changes
+        run: |
+          git add core-platform/docker-compose.yml
+          
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(release): update docker-compose.yml to version ${{ inputs.release_version }} [skip ci]"
+            git push origin HEAD
+          else
+            echo "No changes detected in docker-compose.yml"
+          fi
